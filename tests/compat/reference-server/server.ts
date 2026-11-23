@@ -3178,7 +3178,7 @@ const openApiInstances = openApiProfiles(PORT, database);
 const oauthProviderMetadata = oauthProviderDiscovery(`http://localhost:${PORT}`);
 const oauthClients = await oauthClientFixture(authOptions);
 const ssoControl = await ssoFixture(authOptions);
-const scimControl = await scimFixture(authOptions);
+let scimControl: ReturnType<typeof scimFixture> | undefined;
 const ssoDateControl = await ssoDateFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
@@ -3193,8 +3193,14 @@ const server = await serveFixture({
       const url = new URL(request.url);
       const ssoDateResponse = await ssoDateControl(request);
       if (ssoDateResponse) return ssoDateResponse;
-      const scimResponse = await scimControl(request);
-      if (scimResponse) return scimResponse;
+      if (
+        url.pathname === "/__test/server-api/scim" ||
+        url.pathname.startsWith("/__test/profiles/scim/api/auth/")
+      ) {
+        const scim = await (scimControl ??= scimFixture(authOptions));
+        const scimResponse = await scim.handle(request);
+        if (scimResponse) return scimResponse;
+      }
       const grantResponse = await deviceGrant.handle(request);
       if (grantResponse) return grantResponse;
       const deletionResponse = await deletionHooks.handle(request);
@@ -3724,10 +3730,10 @@ const server = await serveFixture({
         url.pathname === "/__test/server-api/oauth-provider-clients" &&
         request.method === "POST"
       ) {
-        return oauthClients(request);
+        return oauthClients.handle(request);
       }
       if (url.pathname.startsWith("/__test/profiles/oauth-response-fields/api/auth/")) {
-        return oauthClients(request);
+        return oauthClients.handle(request);
       }
       if (url.pathname === "/__test/server-api/sso" && request.method === "POST") {
         return ssoControl(request);
@@ -4267,6 +4273,12 @@ const server = await serveFixture({
         return jsonResponse(databaseResidue());
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        // SCIM owns a separate in-memory database from resetDatabaseState.
+        if (scimControl) {
+          (await scimControl).close();
+          scimControl = undefined;
+        }
+        oauthClients.reset();
         await apiKeyStorage.reset();
         railwayFixture.reset();
         redditFixture.reset();
@@ -4877,7 +4889,7 @@ const server = await serveFixture({
         url.pathname === `${authOptions.basePath ?? "/api/auth"}/jwks` &&
         request.method === "GET"
       ) {
-        return oauthClients(request);
+        return oauthClients.handle(request);
       }
       return auth.handler(request);
     } catch (error) {

@@ -223,9 +223,7 @@ impl OneTapPlugin {
                 email: text("email").unwrap_or_default().into(),
                 name: text("name").map(Into::into),
                 image: text("picture").map(Into::into),
-                email_verified: payload.get("email_verified").is_some_and(|value| {
-                    value.as_bool() == Some(true) || value.as_str() == Some("true")
-                }),
+                email_verified: crate::oauth::email_verified_claim(payload.get("email_verified")),
             };
             (user, payload.clone())
         };

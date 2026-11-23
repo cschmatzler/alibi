@@ -35,7 +35,7 @@ mod undefined_tests {
     async fn assert_factory_cases(asynchronous: bool) {
         let fixture: Fixture =
             serde_json::from_str(include_str!("field_policy_undefined_cases.json")).unwrap();
-        assert_eq!(fixture.better_auth, "1.7.18");
+        assert_eq!(fixture.better_auth, "1.7.27");
         assert_eq!(fixture.cases.len(), 256);
         for case in fixture.cases {
             let events = Arc::new(Mutex::new(Vec::new()));

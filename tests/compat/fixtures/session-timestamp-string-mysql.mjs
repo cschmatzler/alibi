@@ -49,6 +49,6 @@ try {
     cases.push({ operation, compatible, token, callback_result: resultText, events: [...events], outcome, rows: stored.length, physical: stored[0]?.value ?? null, readback: readback?.session.expiresAt ?? null });
   }
   assert.equal(cases.length,4);
-  await writeFile(new URL("../../fixtures/session-timestamp-hooks-string-mysql.json",import.meta.url),JSON.stringify({ better_auth: "1.7.18", backend: "mysql", mysql: mysql.mysqlVersion, mysql2: mysql.mysql2Version, schema_sql, cases })+"\n");
+  await writeFile(new URL("../../fixtures/session-timestamp-hooks-string-mysql.json",import.meta.url),JSON.stringify({ better_auth: "1.7.27", backend: "mysql", mysql: mysql.mysqlVersion, mysql2: mysql.mysql2Version, schema_sql, cases })+"\n");
   console.log("Four actual MySQL session callback-string cases");
 } finally { await mysql.close(); }

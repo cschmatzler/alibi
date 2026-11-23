@@ -3,7 +3,7 @@ use super::{
     AuthContext, AuthError, AuthResult, AuthSchema, EndpointResponse, JsValue, ServerEndpoint,
     SsoPlugin, Value, json,
 };
-use alibi_core::{AuthUser, session::SessionRequest};
+use alibi_core::{AuthAccount, AuthUser, session::SessionRequest};
 use base64::Engine as _;
 use quick_xml::{
     Writer,
@@ -83,17 +83,35 @@ impl SsoPlugin {
             .as_ref()
             .and_then(|row| row.value().ok())
             .and_then(|value| serde_json::from_str::<Value>(value).ok());
-        let name = data
+        let stored_name = data
             .as_ref()
             .and_then(|data| data.get("nameID"))
             .and_then(Value::as_str)
-            .filter(|name| !name.is_empty())
-            .or_else(|| user.email())
-            .unwrap_or_default();
-        let index = data
-            .as_ref()
-            .and_then(|data| data.get("sessionIndex"))
-            .and_then(Value::as_str);
+            .filter(|name| !name.is_empty());
+        let (name, index) = if let Some(name) = stored_name {
+            let index = data
+                .as_ref()
+                .and_then(|data| data.get("sessionIndex"))
+                .and_then(Value::as_str);
+            (name.to_owned(), index)
+        } else {
+            let account = ctx
+                .database
+                .get_user_accounts(user.id().as_ref())
+                .await?
+                .into_iter()
+                .filter(|account| account.provider_id() == provider_id)
+                .min_by_key(|account| std::cmp::Reverse(account.updated_at()));
+            let name = if let Some(account) = account {
+                account
+                    .account_id()
+                    .to_utf8()
+                    .map_err(|error| AuthError::internal(error.to_string()))?
+            } else {
+                user.email().unwrap_or_default().to_owned()
+            };
+            (name, None)
+        };
         let entity = metadata
             .as_ref()
             .map(|sp| sp.entity_id.as_str())
@@ -136,7 +154,7 @@ impl SsoPlugin {
             Event::Text(BytesText::new(entity)),
             Event::End(BytesEnd::new("saml:Issuer")),
             Event::Start(name_id),
-            Event::Text(BytesText::new(name)),
+            Event::Text(BytesText::new(&name)),
             Event::End(BytesEnd::new("saml:NameID")),
         ] {
             writer

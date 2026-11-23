@@ -29,7 +29,7 @@ async fn mysql_email_otp_reuse_matches_actual_id_strategies() -> TestResult {
     let admin = alibi::seaorm::Database::connect(base.clone()).await?;
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/mysql-email-otp-reuse.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let profiles = fixture["profiles"].as_array().unwrap();
     assert_eq!(profiles.len(), 2);
     for profile in profiles {

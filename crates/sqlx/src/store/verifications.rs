@@ -238,6 +238,35 @@ where
         }
         let table = Self::verification_table();
         let id = S::Verification::parse_id(model.id().as_ref())?;
+        let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
+        siblings.ident(table);
+        siblings.push(" WHERE ");
+        siblings.compare_model::<S::Verification>(
+            table,
+            S::Verification::identifier_column(),
+            " = ",
+            identifier,
+        );
+        // Remove stale generations before spending the selected row. An
+        // insert after the selected generation remains available.
+        siblings.push(" AND ");
+        siblings.compare_model::<S::Verification>(
+            table,
+            S::Verification::id_column(),
+            " <> ",
+            id.clone(),
+        );
+        siblings.push(" AND ");
+        siblings.compare_model::<S::Verification>(
+            table,
+            S::Verification::created_at_column(),
+            " <= ",
+            S::Verification::timestamp_value(
+                S::Verification::created_at_column(),
+                model.created_at(),
+            ),
+        );
+        _ = exec.execute(siblings).await?;
         let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
         delete.ident(table);
         delete.push(" WHERE ");
@@ -252,16 +281,6 @@ where
         if exec.execute(delete).await? != 1 {
             return Ok(None);
         }
-        let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
-        siblings.ident(table);
-        siblings.push(" WHERE ");
-        siblings.compare_model::<S::Verification>(
-            table,
-            S::Verification::identifier_column(),
-            " = ",
-            identifier,
-        );
-        _ = exec.execute(siblings).await?;
         Ok(Some(model))
     }
 
@@ -302,6 +321,79 @@ where
         }
         model::returning::<S::Verification>(&mut sql);
         self.exec().fetch_optional::<S::Verification>(sql).await
+    }
+
+    /// Delete expired rows, of one identifier when given, through
+    /// `deleteManyWithHooks`.
+    async fn delete_expired_verifications_matching(
+        &self,
+        identifier: Option<&str>,
+    ) -> AuthResult<usize> {
+        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
+        // deadline equals the current millisecond, including zero-TTL OTPs.
+        let deadline = Utc::now().trunc_subsecs(3);
+        let table = Self::verification_table();
+        let mut select = model::select_model::<S::Verification>(self.exec());
+        select.push(" WHERE ");
+        select.compare_model::<S::Verification>(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
+        if let Some(identifier) = identifier {
+            select.push(" AND ");
+            select.compare_model::<S::Verification>(
+                table,
+                S::Verification::identifier_column(),
+                " = ",
+                identifier,
+            );
+        }
+        select.push(" LIMIT ");
+        select.bind(self.find_many_limit());
+        let snapshots: Vec<S::Verification> = self.exec().fetch_all(select).await?;
+        let hook_context = self.hook_context(None);
+        // deleteManyWithHooks snapshots a findMany page before mutation.
+        // Any before-hook veto cancels the entire batch, including rows whose
+        // callbacks already ran; after hooks receive those original snapshots.
+        for model in &snapshots {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_verification(model, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(0);
+                }
+            }
+        }
+        let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
+        delete.ident(table);
+        delete.push(" WHERE ");
+        delete.compare_model::<S::Verification>(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
+        if let Some(identifier) = identifier {
+            delete.push(" AND ");
+            delete.compare_model::<S::Verification>(
+                table,
+                S::Verification::identifier_column(),
+                " = ",
+                identifier,
+            );
+        }
+        let deleted = self.exec().execute(delete).await?;
+        for model in &snapshots {
+            for hook in self.hooks() {
+                hook.after_delete_verification(model, &hook_context).await?;
+            }
+        }
+        usize::try_from(deleted)
+            .map_err(|_error| AuthError::internal("Verification cleanup count overflow"))
     }
 }
 
@@ -401,6 +493,33 @@ where
             )],
         );
         self.exec().fetch_optional(sql).await
+    }
+
+    async fn list_verifications_by_identifier(
+        &self,
+        identifier: &str,
+        limit: u32,
+        offset: u32,
+    ) -> AuthResult<Vec<S::Verification>> {
+        let exec = self.exec();
+        let table = Self::verification_table();
+        let mut sql = model::select_model::<S::Verification>(exec);
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Verification>(
+            table,
+            S::Verification::identifier_column(),
+            " = ",
+            identifier,
+        );
+        sql.push(" ORDER BY ");
+        sql.column(table, S::Verification::created_at_column());
+        sql.push(" DESC, ");
+        sql.column(table, S::Verification::id_column());
+        sql.push(" DESC LIMIT ");
+        sql.bind(i64::from(limit));
+        sql.push(" OFFSET ");
+        sql.bind(i64::from(offset));
+        exec.fetch_all(sql).await
     }
 
     async fn consume_verification_by_identifier(
@@ -654,52 +773,14 @@ where
     }
 
     async fn delete_expired_verifications(&self) -> AuthResult<usize> {
-        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
-        // deadline equals the current millisecond, including zero-TTL OTPs.
-        let deadline = Utc::now().trunc_subsecs(3);
-        let table = Self::verification_table();
-        let mut select = model::select_model::<S::Verification>(self.exec());
-        select.push(" WHERE ");
-        select.compare_model::<S::Verification>(
-            table,
-            S::Verification::expires_at_column(),
-            " < ",
-            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
-        );
-        select.push(" LIMIT ");
-        select.bind(self.find_many_limit());
-        let snapshots: Vec<S::Verification> = self.exec().fetch_all(select).await?;
-        let hook_context = self.hook_context(None);
-        // deleteManyWithHooks snapshots a findMany page before mutation.
-        // Any before-hook veto cancels the entire batch, including rows whose
-        // callbacks already ran; after hooks receive those original snapshots.
-        for model in &snapshots {
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_verification(model, &hook_context)
-                    .await?
-                    .is_cancelled()
-                {
-                    return Ok(0);
-                }
-            }
-        }
-        let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
-        delete.ident(table);
-        delete.push(" WHERE ");
-        delete.compare_model::<S::Verification>(
-            table,
-            S::Verification::expires_at_column(),
-            " < ",
-            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
-        );
-        let deleted = self.exec().execute(delete).await?;
-        for model in &snapshots {
-            for hook in self.hooks() {
-                hook.after_delete_verification(model, &hook_context).await?;
-            }
-        }
-        usize::try_from(deleted)
-            .map_err(|_error| AuthError::internal("Verification cleanup count overflow"))
+        self.delete_expired_verifications_matching(None).await
+    }
+
+    async fn delete_expired_verifications_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<usize> {
+        self.delete_expired_verifications_matching(Some(identifier))
+            .await
     }
 }

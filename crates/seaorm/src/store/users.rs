@@ -151,6 +151,19 @@ pub(super) async fn provider_verification_output<M: SeaOrmUserModel, C: Connecti
     .transpose()
 }
 
+fn user_json_column<M: SeaOrmUserModel>(config: &alibi_core::AuthConfig, column: M::Column) -> bool {
+    use sea_orm::Iden;
+
+    let physical = column.to_string();
+    config.user.additional_fields.iter().any(|(name, field)| {
+        field.schema.get("type").and_then(serde_json::Value::as_str) == Some("json")
+            && field.field_name.as_deref().map_or_else(
+                || M::list_users_column(name).is_some_and(|column| column.to_string() == physical),
+                |name| name == physical,
+            )
+    })
+}
+
 async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     mut model: M::ActiveModel,
     db: &C,
@@ -158,6 +171,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     id: Option<&str>,
     native_fields: std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>,
     prepared_fields: std::collections::BTreeSet<String>,
+    json_column: impl Fn(M::Column) -> bool + Send,
 ) -> AuthResult<Option<M>> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
@@ -218,9 +232,12 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 column.def().get_column_type(),
                 sea_orm::sea_query::ColumnType::Json | sea_orm::sea_query::ColumnType::JsonBinary
             );
-        let parameter = if json_parameter {
+        let json_text = db.get_database_backend() == sea_orm::DbBackend::Postgres
+            && matches!(column.def().get_column_type(), sea_orm::sea_query::ColumnType::Text)
+            && json_column(column);
+        let parameter = if json_parameter || json_text {
             Some(sea_orm::Value::String(
-                alibi_core::store::postgres_parameter::text_parameter(&raw)?
+                alibi_core::store::postgres_parameter::json_write_parameter(&raw)?
                     .map(|text| text.to_utf8_binding()),
             ))
         } else {
@@ -541,7 +558,7 @@ where
                     Some((
                         column,
                         sea_orm::Value::String(
-                            alibi_core::store::postgres_parameter::text_parameter(
+                            alibi_core::store::postgres_parameter::json_write_parameter(
                                 &alibi_core::utils::json::JsValue::from(value.clone()),
                             )?
                             .map(|text| text.to_utf8_binding()),
@@ -581,7 +598,17 @@ where
                 _ = native_fields.entry(physical).or_insert(parameter);
                 continue;
             }
-            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+            let value = if backend == sea_orm::DbBackend::Postgres
+                && matches!(column.def().get_column_type(), sea_orm::sea_query::ColumnType::Text)
+                && user_json_column::<S::User>(self.config(), column)
+            {
+                sea_orm::Value::String(
+                    alibi_core::store::postgres_parameter::json_write_parameter(&value.into())?
+                        .map(|text| text.to_utf8_binding()),
+                )
+            } else {
+                crate::additional_fields::prepare_value(db, &column, value).await?
+            };
             S::User::set_additional_field(&mut model, column, value, backend)?;
         }
         if let Some((column, value)) = metadata_json {
@@ -596,6 +623,7 @@ where
             None,
             native_fields,
             Default::default(),
+            |column| user_json_column::<S::User>(self.config(), column),
         )
         .await?
         .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
@@ -619,6 +647,13 @@ where
         let field = user_filter::field(filter_field);
         let column = S::User::list_users_column(field)
             .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
+        if matches!(value, UserFilterValue::Native(alibi_core::utils::json::JsValue::Null)) {
+            match operator {
+                "eq" => return Ok(Expr::col(column).is_null()),
+                "ne" => return Ok(Expr::col(column).is_not_null()),
+                _ => {}
+            }
+        }
         let kind = match column.def().get_column_type() {
             ColumnType::Boolean => Column::Boolean,
             ColumnType::Integer => Column::Int,
@@ -1040,6 +1075,7 @@ where
             Some(id),
             native,
             prepared_fields,
+            |column| user_json_column::<S::User>(self.config(), column),
         )
         .await?;
         if tx.is_none() {

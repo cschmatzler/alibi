@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -129,7 +131,7 @@ for (const mode of [
   "configured-endpoint",
 ] as const) {
   compatScenario(
-    `kakao published ${mode} authorization retains ordered scopes while omitting PKCE`,
+    `kakao published ${mode} authorization retains ordered scopes and sends PKCE`,
     async (ctx) => {
       const other = await foreign(ctx);
       const fixture: FixtureProfile = `social-kakao-${mode}`;
@@ -167,8 +169,9 @@ for (const mode of [
       expect(url.searchParams.get("response_type")).toBe("code");
       expect(url.searchParams.getAll("state")).toHaveLength(1);
       expect(url.searchParams.get("state")).not.toBe("stale");
-      expect(url.searchParams.has("code_challenge_method")).toBe(false);
-      expect(url.searchParams.has("code_challenge")).toBe(false);
+      // Better Auth #12315 forwards the verifier to both parts of the code flow.
+      expect(url.searchParams.get("code_challenge_method")).toBe("S256");
+      expect(url.searchParams.get("code_challenge")).toMatch(/^[\w-]{43}$/);
       expect(url.searchParams.get("login_hint")).toBe("ignored@example.invalid");
       expect(url.searchParams.get("custom")).toBe("value with space");
       expect(url.searchParams.get("redirect_uri")).toBe(
@@ -242,6 +245,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       expect(exchange).toEqual({
         grant_type: "authorization_code",
         code: "fixture-code",
+        code_verifier: expect.stringMatching(/^[\w-]{128}$/),
         client_id: "fixture-social-client",
         ...(mode === "public" ? {} : { client_secret: "fixture-social-secret" }),
         ...(mode === "client-key" ? { client_key: "fixture-kakao-client-key" } : {}),
@@ -250,7 +254,9 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
             ? "https://client.example.invalid/kakao-return"
             : ctx.baseURL + authProfilePath(fixture) + "/callback/kakao",
       });
-      expect(flow.url.searchParams.has("code_challenge")).toBe(false);
+      expect(createHash("sha256").update(exchange.code_verifier!).digest("base64url")).toBe(
+        flow.url.searchParams.get("code_challenge"),
+      );
       expect(raw[0]!.authorization).toBeNull();
       expect(raw[1]).toEqual({
         path: "/userinfo",
@@ -669,13 +675,14 @@ compatScenario(
 );
 
 compatScenario(
-  "kakao rejects direct ID-token sign-in without remote verification or identity writes",
+  "kakao rejects malformed ID tokens without remote verification or identity writes",
   async (ctx) => {
     const other = await foreign(ctx);
     const result = await ctx
       .actor("kakao", "social-kakao-default")
-      .client.signIn.social({ provider: "kakao", idToken: { token: "unsupported-proof" } });
-    expect(result.error?.code).toBe("ID_TOKEN_NOT_SUPPORTED");
+      .client.signIn.social({ provider: "kakao", idToken: { token: "malformed-proof" } });
+    // Better Auth #12316 supports Kakao ID tokens and rejects malformed proofs.
+    expect(result.error?.code).toBe("INVALID_TOKEN");
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
 

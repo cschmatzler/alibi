@@ -3,11 +3,17 @@ use super::saml_idp as idp;
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SsoConfig, SsoPlugin};
-use alibi::{AuthVerification, store::VerificationStore};
+use alibi::{
+    AuthVerification,
+    store::{SessionStore, VerificationStore},
+};
 use base64::Engine as _;
 use std::io::Read as _;
 backend_tests!(
     sso_logout_uses_acs_session_index_and_retires_session,
+    sso_logout_uses_nameid_and_session_index_after_refresh,
+    sso_logout_falls_back_to_the_linked_nameid,
+    sso_idp_logout_retires_only_the_refreshed_session_after_the_initial_expiry,
     sso_logout_response_retires_proof_and_rejects_external_relay,
     sso_idp_logout_matches_session_index_before_retiring_session,
     sso_logout_required_signature_preserves_proof_until_trusted_completion,
@@ -25,8 +31,24 @@ backend_tests!(
     sso_local_signout_http_retires_tracking_without_touching_other_sessions,
     sso_local_signout_disabled_slo_preserves_tracking
 );
+postgres_tests!(
+    sso_logout_uses_nameid_and_session_index_after_refresh,
+    sso_logout_falls_back_to_the_linked_nameid,
+    sso_idp_logout_retires_only_the_refreshed_session_after_the_initial_expiry
+);
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, LogoutCase::Initiation).await
+}
+async fn sso_logout_uses_nameid_and_session_index_after_refresh<B: Backend>(db: Db) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::Refreshed).await
+}
+async fn sso_logout_falls_back_to_the_linked_nameid<B: Backend>(db: Db) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::MissingTracking).await
+}
+async fn sso_idp_logout_retires_only_the_refreshed_session_after_the_initial_expiry<B: Backend>(
+    db: Db,
+) -> TestResult {
+    idp_logout_flow::<B>(db, IdpLogoutCase::Refreshed).await
 }
 async fn sso_logout_response_retires_proof_and_rejects_external_relay<B: Backend>(
     db: Db,
@@ -82,6 +104,8 @@ enum LogoutCase {
     LocalHttp,
     LocalDisabled,
     Initiation,
+    Refreshed,
+    MissingTracking,
     Post,
     RequiredSignature,
     Rollover,
@@ -91,7 +115,10 @@ enum LogoutCase {
     IdpXml,
 }
 async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
-    let complete = !matches!(case, LogoutCase::Initiation);
+    let complete = !matches!(
+        case,
+        LogoutCase::Initiation | LogoutCase::Refreshed | LogoutCase::MissingTracking
+    );
     let signed = matches!(
         case,
         LogoutCase::RequiredSignature | LogoutCase::Rollover | LogoutCase::IdpXml
@@ -144,7 +171,17 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     .await?
     .into_response()?;
     let email = "saml-logout-user@example.test";
-    let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, false)?;
+    let name_id = if matches!(case, LogoutCase::Refreshed | LogoutCase::MissingTracking) {
+        "opaque-directory-id"
+    } else {
+        email
+    };
+    let grant = idp::custom_grant(body(&started)["url"].as_str().unwrap(), email, |xml| {
+        xml.replace(
+            &format!(">{email}</saml:NameID>"),
+            &format!(">{name_id}</saml:NameID>"),
+        )
+    })?;
     let completed = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("sso", "acsEndpoint")
@@ -165,7 +202,7 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     assert_eq!(body(&session)["user"]["email"], email);
     let session = body(&session)["session"].clone();
     let lookup = format!("saml-session-by-id:{}", session["id"].as_str().unwrap());
-    let key = format!("saml-session:logout-provider:{email}");
+    let key = format!("saml-session:logout-provider:{name_id}");
     let stored = store
         .get_latest_verification_by_identifier(&key)
         .await?
@@ -174,7 +211,7 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     assert_eq!(value["sessionId"], session["id"]);
     assert_eq!(value["sessionToken"], session["token"]);
     assert_eq!(value["sessionIndex"], "session-index");
-    assert_eq!(value["nameID"], email);
+    assert_eq!(value["nameID"], name_id);
     assert_eq!(
         store
             .get_latest_verification_by_identifier(&lookup)
@@ -183,6 +220,37 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
             .value(),
         key
     );
+    if matches!(case, LogoutCase::Refreshed) {
+        let initial_expiry = chrono::Utc::now() + chrono::Duration::minutes(2);
+        store
+            .update_session_expiry(session["token"].as_str().unwrap(), initial_expiry)
+            .await?;
+        for identifier in [&key, &lookup] {
+            _ = store
+                .update_verification_by_identifier(
+                    identifier,
+                    alibi::UpdateVerification {
+                        expires_at: Some(initial_expiry),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        }
+        let refreshed = call(&auth, request("/get-session", None, &cookie), 200).await;
+        let expires_at = chrono::DateTime::parse_from_rfc3339(
+            body(&refreshed)["session"]["expiresAt"].as_str().unwrap(),
+        )?;
+        for identifier in [&key, &lookup] {
+            let row = store
+                .get_latest_verification_by_identifier(identifier)
+                .await?
+                .unwrap();
+            assert_eq!(row.expires_at().timestamp_millis(), expires_at.timestamp_millis());
+        }
+    } else if matches!(case, LogoutCase::MissingTracking) {
+        store.delete_verifications_by_identifier(&key).await?;
+        store.delete_verifications_by_identifier(&lookup).await?;
+    }
     if matches!(
         case,
         LogoutCase::LocalApi | LogoutCase::LocalHttp | LogoutCase::LocalDisabled
@@ -284,15 +352,17 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
                 doc.element(*node)
                     .is_some_and(|element| element.name.local_name == name)
             })
-            .unwrap()
     };
-    assert_eq!(doc.element_text(find("NameID")), Some(email));
     assert_eq!(
-        doc.element_text(find("SessionIndex")),
-        Some("session-index")
+        find("NameID").and_then(|node| doc.element_text(node)),
+        Some(name_id)
     );
     assert_eq!(
-        doc.element_text(find("Issuer")),
+        find("SessionIndex").and_then(|node| doc.element_text(node)),
+        (!matches!(case, LogoutCase::MissingTracking)).then_some("session-index")
+    );
+    assert_eq!(
+        find("Issuer").and_then(|node| doc.element_text(node)),
         Some(if matches!(case, LogoutCase::CustomMetadata) {
             "https://sp.example.test/from-xml"
         } else {
@@ -300,7 +370,7 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
         })
     );
     assert_eq!(
-        doc.get_attribute(find("NameID"), "Format"),
+        doc.get_attribute(find("NameID").unwrap(), "Format"),
         Some(if matches!(case, LogoutCase::CustomMetadata) {
             "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
         } else {
@@ -515,6 +585,7 @@ async fn sso_idp_logout_xml_uses_xml_service_and_trusted_signature<B: Backend>(
 #[derive(Clone, Copy)]
 enum IdpLogoutCase {
     Unsigned,
+    Refreshed,
     RequiredSignature,
     Http,
     OptionalSignature,
@@ -586,6 +657,77 @@ async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult 
         let session =
             body(&call(&auth, request("/get-session", None, &cookie), 200).await)["session"]
                 .clone();
+        if matching && matches!(case, IdpLogoutCase::Refreshed) {
+            let session_id = session["id"].as_str().unwrap();
+            let key = format!("saml-session:idp-logout-provider:{email}");
+            let lookup = format!("saml-session-by-id:{session_id}");
+            let now = chrono::Utc::now();
+            let initial_expiry = now + chrono::Duration::minutes(2);
+            store
+                .update_session_expiry(session["token"].as_str().unwrap(), initial_expiry)
+                .await?;
+            for identifier in [&key, &lookup] {
+                _ = store
+                    .update_verification_by_identifier(
+                        identifier,
+                        alibi::UpdateVerification {
+                            expires_at: Some(initial_expiry),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+            // Put more than one page of newer sessions ahead of the one being refreshed.
+            let mut siblings = Vec::new();
+            for index in 0..101 {
+                let record = store
+                    .create_verification_record(
+                        alibi::verification::VerificationCreation {
+                            id: None,
+                            identifier: key.clone(),
+                            value: json!({"sessionId":format!("newer-{index}"),"nameID":email})
+                                .to_string(),
+                            expires_at: initial_expiry,
+                            created_at: now + chrono::Duration::seconds(1),
+                            updated_at: now,
+                        },
+                        alibi::verification::VerificationPublication {
+                            store_in_database: true,
+                            secondary_storage: None,
+                            cache_key: String::new(),
+                        },
+                    )
+                    .await?
+                    .unwrap();
+                siblings.push(record.id().unwrap().to_owned());
+            }
+            let _ = call(&auth, request("/get-session", None, &cookie), 200).await;
+            let rows = store.list_verifications_by_identifier(&key, 102, 0).await?;
+            assert_eq!(rows.len(), 102);
+            for row in &rows {
+                if siblings.iter().any(|id| id == row.id().as_ref()) {
+                    assert_eq!(
+                        row.expires_at().timestamp_millis(),
+                        initial_expiry.timestamp_millis()
+                    );
+                } else {
+                    assert!(row.expires_at() > initial_expiry);
+                }
+            }
+            // Reproduce the expiry sweep at the original deadline without waiting.
+            _ = db.execute(
+                "DELETE FROM \"verification\" WHERE \"expiresAt\" <= (SELECT \"expiresAt\" FROM \"verification\" WHERE \"id\" = $1)",
+                &[&siblings[0]],
+            ).await?;
+            let retained = store
+                .get_latest_verification_by_identifier(&key)
+                .await?
+                .unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(retained.value())?["sessionId"],
+                session_id
+            );
+        }
         let request_id = if matching {
             "_idp-matching-request"
         } else {

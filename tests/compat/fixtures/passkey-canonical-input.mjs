@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { passkey } from "../reference-server/node_modules/@better-auth/passkey/dist/index.mjs";
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/passkey/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
 const plugin = passkey();
 const cases = [];
 function record(operation, mode, input) {

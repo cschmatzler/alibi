@@ -183,7 +183,6 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
         OAuthProviderPlugin::oauth2_consent_endpoint(true, Some("email"), Some(signed))?,
         EndpointOptions {
             headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-            request: Some(request("/oauth2/consent", None, "")),
             ..Default::default()
         },
     ))

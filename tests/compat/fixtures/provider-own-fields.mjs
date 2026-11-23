@@ -3,14 +3,14 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { socialProviders } from "../reference-server/node_modules/@better-auth/core/dist/social-providers/index.mjs";
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/core/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
 const names = ["roblox", "salesforce", "slack", "spotify", "twitch", "twitter", "vercel", "vk", "zoom", "facebook-graph", "facebook-limited", "microsoft", "discord", "tiktok", "paybin", "polar", "railway", "reddit", "notion", "atlassian", "line-token", "line-http", "naver", "paypal", "cloudflare", "cognito-token", "cognito-http", "gitlab", "apple", "wechat"];
 const addedFactories = ["dropbox", "figma", "github", "google", "huggingface", "kakao", "kick", "linear", "linkedin"];
 names.push(...addedFactories);
 const factoryName = name => name.startsWith("facebook-") ? "facebook" : name.startsWith("cognito-") ? "cognito" : name.startsWith("line-") ? "line" : name;
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-const sourceFiles = await readdir(`${process.env.BETTER_AUTH_SOURCE ?? "/tmp/alibi-upstream-1.7.18"}/packages/core/src/social-providers`);
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+const sourceFiles = await readdir(`${process.env.BETTER_AUTH_SOURCE ?? "/tmp/alibi-upstream-1.7.27"}/packages/core/src/social-providers`);
 const sourceFactories = sourceFiles.filter(file => file.endsWith(".ts") && !file.endsWith(".test.ts") && file !== "index.ts")
   .map(file => file.slice(0, -3).replace("microsoft-entra-id", "microsoft")).sort();
 assert.deepEqual([...new Set(names.map(factoryName))].sort(), sourceFactories);

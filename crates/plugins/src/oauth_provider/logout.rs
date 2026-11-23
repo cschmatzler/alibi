@@ -33,6 +33,12 @@ impl OAuthProviderPlugin {
                 }
             }
         }
+        if input.get("post_logout_redirect_uri").and_then(Value::as_str)
+            .filter(|uri| !uri.is_empty())
+            .is_some_and(|uri| !self.redirect_uri_transport_allowed(uri, false))
+        {
+            return protocol_error(req, 400, "invalid_request", alibi_core::utils::redirect_uri::INSECURE_REDIRECT_URI);
+        }
         let manager = ctx.session_manager();
         let current = if let Some(token) = manager.extract_session_token(req) {
             manager.get_session(&token).await?
@@ -127,8 +133,10 @@ impl OAuthProviderPlugin {
             .as_ref()
             .and_then(|options| options.issuer.as_deref())
             .unwrap_or(&base);
+        let published = super::normalize_issuer(issuer);
         let Some(claims) = claims.filter(|claims| {
-            claims.get("iss").and_then(Value::as_str) == Some(issuer)
+            claims.get("iss").and_then(Value::as_str)
+                .is_some_and(|actual| actual == issuer || actual == published)
                 && claims.get("aud").is_some_and(|aud| {
                     aud.as_str() == Some(client.client_id.as_str())
                         || aud.as_array().is_some_and(|values| {
@@ -439,7 +447,11 @@ impl OAuthProviderPlugin {
                 state.get("postLogoutRedirectUri").and_then(Value::as_str),
             )
         {
-            let client = super::discovery::resolve(ctx, id).await?;
+            let client = if self.redirect_uri_transport_allowed(uri, false) {
+                super::discovery::resolve(ctx, id).await?
+            } else {
+                None
+            };
             if client.is_some_and(|client| {
                 client.metadata.get("disabled") != Some(&Value::Bool(true))
                     && client.metadata.get("enable_end_session") == Some(&Value::Bool(true))

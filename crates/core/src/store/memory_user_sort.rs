@@ -2,7 +2,7 @@
 // 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 Python Software Foundation;
 // All Rights Reserved. See memory_user_sort.LICENSE.
 //
-// Rust index-only adaptation of Node v26.13.0's
+// Rust index-only adaptation of Node v26.13.1's
 // deps/v8/third_party/v8/builtins/array-sort.tq:486-1270,1418-1430.
 // VM element access is omitted. Comparison order, run merging and galloping
 // are retained: Better Auth's mixed-ID comparator is not a total order.

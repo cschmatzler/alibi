@@ -138,6 +138,7 @@ pub(crate) async fn router(
         let mut generic = GenericOAuthConfig::new("discovery-client", "discovery-secret");
         generic.discovery_url = Some(format!("{}/metadata/{mode}", fixture.base));
         generic.discovery_headers = vec![("x-discovery".into(), "configured-header".into())];
+        generic.authorization_headers = vec![("x-grant".into(), "configured-grant".into())];
         if ["override", "fallback", "invalid-issuer"].contains(&mode) {
             generic.authorization_url = Some("https://configured.example.invalid/authorize".into());
             generic.token_url = Some(format!("{}/token/configured", fixture.base));
@@ -173,7 +174,6 @@ pub(crate) async fn router(
         policy
             .refresh_token_params
             .insert("resource".into(), "refresh-resource".into());
-        policy.authorization_code_headers = vec![("x-grant".into(), "configured-grant".into())];
         if mode == "oidc" || mode == "nonce-unbound" {
             generic.provider.get_user_info = Some(Arc::new(Custom(fixture.clone())));
         }

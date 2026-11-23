@@ -4,8 +4,8 @@ import { memoryAdapter } from "../reference-server/node_modules/@better-auth/mem
 import { username } from "../reference-server/node_modules/better-auth/dist/plugins/username/index.mjs";
 import { admin } from "../reference-server/node_modules/better-auth/dist/plugins/admin/index.mjs";
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url))).version, "1.7.27");
 const cases = [];
 for (const [mode, plugins, additionalFields] of [
   ["none", [], {}], ["username", [username()], {}], ["admin", [admin()], {}],
@@ -16,5 +16,5 @@ for (const [mode, plugins, additionalFields] of [
   const output = await adapter.findOne({ model: "user", where: [{ field: "id", value: "owner" }] });
   cases.push({ mode, row, output });
 }
-await writeFile(new URL("../../../crates/core/src/store/user_disabled_plugin_output_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/user_disabled_plugin_output_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual initialized user output schema cases`);

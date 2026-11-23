@@ -52,6 +52,15 @@ pub fn text_parameter(value: &JsValue) -> AuthResult<Option<JsString>> {
     }))
 }
 
+/// JSON writes stringify top-level arrays before passing them to PostgreSQL.
+/// Other parameters retain node-postgres's ordinary scalar and array encoding.
+pub fn json_write_parameter(value: &JsValue) -> AuthResult<Option<JsString>> {
+    if value.is_array() {
+        return Ok(Some(json::to_string(value)?.into()));
+    }
+    text_parameter(value)
+}
+
 fn array_parameter(units: &mut Vec<u16>, values: &[JsValue]) -> AuthResult<()> {
     units.push(u16::from(b'{'));
     for (index, value) in values.iter().enumerate() {

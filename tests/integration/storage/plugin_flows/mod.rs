@@ -122,6 +122,7 @@ mod session_plugins;
 mod signup_privacy;
 mod siwe_matrix;
 mod social_account_api;
+mod social_account_fields;
 mod social_accounts;
 mod social_flows;
 mod social_grants;
@@ -577,6 +578,7 @@ mod scim_managed_revoke;
 mod scim_managed_rotate;
 mod scim_populated_decommission;
 mod scim_projection_admission;
+mod scim_read_limits;
 mod scim_role_projection;
 mod scim_terminal_binding;
 

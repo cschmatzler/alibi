@@ -13,12 +13,12 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 backend_tests!(
     oauth_remote_client_jwks_caches_across_instances_and_refetches_only_for_key_misses,
     oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs,
-    oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order
+    oauth_remote_client_jwks_evicts_least_recently_used_uri
 );
 postgres_tests!(
     oauth_remote_client_jwks_caches_across_instances_and_refetches_only_for_key_misses,
     oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs,
-    oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order
+    oauth_remote_client_jwks_evicts_least_recently_used_uri
 );
 #[path = "../../../fixtures/oauth/remote-jwks-response.rs"]
 mod remote_response;
@@ -251,7 +251,7 @@ async fn oauth_remote_client_jwks_caches_across_instances_and_refetches_only_for
     assert_eq!(resource.fetches.lock().unwrap().len(), 2);
     assert_eq!(
         *resource.fetches.lock().unwrap(),
-        vec![json!({"url":URI,"accept":"application/json","redirect":"error","aborted":false}); 2]
+        vec![json!({"url":URI,"accept":"application/json","redirect":"manual","aborted":false}); 2]
     );
     B::close(connection).await
 }
@@ -416,7 +416,7 @@ async fn oauth_remote_client_jwks_validates_responses_and_uris_without_consuming
     B::close(connection).await
 }
 
-async fn oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order<
+async fn oauth_remote_client_jwks_evicts_least_recently_used_uri<
     B: Backend,
 >(
     db: Db,
@@ -466,7 +466,7 @@ async fn oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_inser
         assert_eq!(response.status, 200, "entry {index}: {}", body(&response));
         assert_eq!(resource.fetches.lock().unwrap().len(), index + 1);
     }
-    // Reading and then replacing entry zero must leave it first in FIFO order.
+    // Reading and replacing entry zero makes it the most recently used entry.
     *resource.uri.lock().unwrap() = format!("{URI}?entry=0");
     assert_eq!(
         inspect(&auth, &proof(&auth, rsa, "RS256", "first").await?)
@@ -491,7 +491,7 @@ async fn oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_inser
         200
     );
     assert_eq!(resource.fetches.lock().unwrap().len(), 502);
-    // Entry zero was evicted even though it was just read and rotated.
+    // Entry zero stays cached after its recent use.
     *resource.uri.lock().unwrap() = format!("{URI}?entry=0");
     assert_eq!(
         inspect(&auth, &proof(&auth, ec, "ES256", "second").await?)
@@ -499,10 +499,10 @@ async fn oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_inser
             .status,
         200
     );
-    assert_eq!(resource.fetches.lock().unwrap().len(), 503);
-    // Reinsertion evicts entry one; later entries remain cached.
+    assert_eq!(resource.fetches.lock().unwrap().len(), 502);
+    // Entry one was evicted. Reading entry three keeps it in the cache.
     *resource.document.lock().unwrap() = document(rsa, "RS256", "first");
-    for (index, fetches) in [(3, 503), (1, 504), (3, 504)] {
+    for (index, fetches) in [(3, 502), (1, 503), (3, 503)] {
         *resource.uri.lock().unwrap() = format!("{URI}?entry={index}");
         let response = inspect(&auth, &proof(&auth, rsa, "RS256", "first").await?).await?;
         assert_eq!(response.status, 200, "entry {index}: {}", body(&response));

@@ -386,18 +386,18 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
     assert_eq!(replaced.client.id, result.client.id);
     assert_eq!(replaced.client.created_at, result.client.created_at);
     for (name, value) in [
-        ("client_name", json!("Remote")),
+        ("client_name", Value::Null),
         ("disabled", json!(true)),
         ("skip_consent", json!(true)),
         ("enable_end_session", json!(false)),
         ("client_credentials_scopes", json!(["operator-scope"])),
-        ("dpop_bound_access_tokens", json!(true)),
+        ("dpop_bound_access_tokens", Value::Null),
     ] {
         assert_eq!(replaced.client.metadata[name], value, "{name}");
     }
     assert!(
         replaced.client.metadata.get("application_type").is_none(),
-        "only the explicit null application type clears the model column"
+        "an omitted application type clears the model column"
     );
     assert_eq!(
         auth.store()

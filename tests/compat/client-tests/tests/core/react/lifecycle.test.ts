@@ -305,7 +305,7 @@ compatScenario(
 );
 
 compatScenario(
-  "React deferred refresh exposes upstream media errors and recovers through explicit refresh",
+  "React deferred refresh accepts the SDK refresh POST and renews the session",
   async (ctx) => {
     const observations = [];
     for (const [profile, jsonContentType] of [
@@ -342,49 +342,15 @@ compatScenario(
         const session = JSON.parse((await page.locator("#session").textContent())!);
         const persisted = (await ctx.readUserState({ userId: issued.data!.user.id })) as any;
         expect(persisted.sessions).toHaveLength(1);
-        let recovered;
+        expect(session.error).toBeNull();
+        expect(session.data.session.userId).toBe(issued.data!.user.id);
+        expect(persisted.sessions[0].expiresAt).toBe(session.data.session.expiresAt);
         if (profile === "session-deferred") {
           expect(methods).toEqual(["GET", "POST"]);
-          expect(session.data).toBeNull();
-          expect(session.error).toEqual(
-            jsonContentType
-              ? {
-                  code: "BAD_REQUEST",
-                  message: "Invalid JSON in request body",
-                  status: 400,
-                  statusText: "",
-                }
-              : {
-                  code: "UNSUPPORTED_MEDIA_TYPE",
-                  message: "Content-Type is required. Allowed types: application/json",
-                  status: 415,
-                  statusText: "",
-                },
-          );
-          expect(persisted.sessions[0].expiresAt).toBe(expiry);
-          const refresh = await page.evaluate(() =>
-            window.reactClient.getSession({ fetchOptions: { method: "POST" } }),
-          );
-          expect(refresh.error).toBeNull();
-          await page.locator("#refetch").click();
-          await page.waitForFunction(() => {
-            const state = JSON.parse(document.querySelector("#session")!.textContent!);
-            return state.data && !state.isRefetching;
-          });
-          const rendered = JSON.parse((await page.locator("#session").textContent())!);
-          expect(rendered.error).toBeNull();
-          expect(rendered.data.session.userId).toBe(issued.data!.user.id);
-          expect(Date.parse(rendered.data.session.expiresAt)).toBeGreaterThan(
+          expect(Date.parse(session.data.session.expiresAt)).toBeGreaterThan(
             Date.parse(expiry) + 6 * 86_400_000,
           );
-          expect(methods).toEqual(["GET", "POST", "POST", "GET"]);
-          const renewed = (await ctx.readUserState({ userId: issued.data!.user.id })) as any;
-          expect(renewed.sessions[0].expiresAt).toBe(rendered.data.session.expiresAt);
-          recovered = { refresh, rendered, renewed };
         } else {
-          expect(session.error).toBeNull();
-          expect(session.data.session.userId).toBe(issued.data!.user.id);
-          expect(persisted.sessions[0].expiresAt).toBe(session.data.session.expiresAt);
           expect(methods).toEqual(["GET"]);
           expect(session.data.session.expiresAt).toBe(expiry);
         }
@@ -395,7 +361,6 @@ compatScenario(
           session,
           methods,
           persisted,
-          recovered,
         });
       } finally {
         await browser.close();

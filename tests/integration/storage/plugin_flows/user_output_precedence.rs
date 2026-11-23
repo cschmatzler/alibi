@@ -51,7 +51,7 @@ async fn plugin_user_output_metadata_overrides_configured_visibility<B: Backend>
     let fixture = native::parse_value(include_str!(
         "../../../../crates/core/src/store/user_output_precedence_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 6);
     let (connection, _) = db.migrated::<B>(SECRET).await?;

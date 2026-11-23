@@ -76,7 +76,7 @@ compatScenario(
         { redirect_uris: ["http://app.fixture.test/callback"] },
         { cookie },
         400,
-        "VALIDATION_ERROR",
+        "invalid_redirect_uri",
       ],
       [
         {

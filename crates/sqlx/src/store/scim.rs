@@ -18,6 +18,10 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    fn supports_scim_transactions(&self) -> bool {
+        true
+    }
+
     async fn find_scim_identity_tombstone(
         &self,
         connection: &str,
@@ -525,7 +529,8 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
         &self,
         id: &str,
         domain: &str,
-    ) -> AuthResult<Option<Vec<alibi_core::store::ScimManagedConnectionEvent>>> {
+        page: alibi_core::store::scim::ScimManagedConnectionEventQuery,
+    ) -> AuthResult<Option<alibi_core::store::scim::ScimManagedConnectionEventPage>> {
         let exec = self.exec();
         let mut sql = model::select_model::<connection::Model>(exec);
         sql.push(" WHERE ");
@@ -547,24 +552,40 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
             "scimManagedConnectionEvent",
             "connectionRecordId",
             " = ",
-            connection.id,
+            connection.id.clone(),
         );
         sql.push(" ORDER BY ");
         sql.ident("sequence");
-        sql.push(" DESC LIMIT 100");
-        let mut events = exec.fetch_all::<event::Model>(sql).await?;
-        events.reverse();
+        sql.push(if page.descending { " DESC" } else { " ASC" });
+        sql.push(" LIMIT ");
+        sql.bind(page.limit);
+        sql.push(" OFFSET ");
+        sql.bind(page.offset);
+        let events = exec.fetch_all::<event::Model>(sql).await?;
+        let mut total = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+        total.ident("scimManagedConnectionEvent");
+        total.push(" WHERE ");
+        total.compare(
+            "scimManagedConnectionEvent",
+            "connectionRecordId",
+            " = ",
+            connection.id,
+        );
+        let total = exec.fetch_scalar::<i64>(total).await?.unwrap_or_default();
         Ok(Some(
-            events
-                .into_iter()
-                .map(|event| alibi_core::store::ScimManagedConnectionEvent {
-                    sequence: event.sequence,
-                    kind: event.kind,
-                    actor_id: event.actor_id,
-                    credential_id: event.credential_id,
-                    created_at: event.created_at,
-                })
-                .collect(),
+            alibi_core::store::scim::ScimManagedConnectionEventPage {
+                events: events
+                    .into_iter()
+                    .map(|event| alibi_core::store::ScimManagedConnectionEvent {
+                        sequence: event.sequence,
+                        kind: event.kind,
+                        actor_id: event.actor_id,
+                        credential_id: event.credential_id,
+                        created_at: event.created_at,
+                    })
+                    .collect(),
+                total,
+            },
         ))
     }
 
@@ -1079,8 +1100,7 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
         );
         sql.push(" ORDER BY ");
         sql.ident("createdAt");
-        sql.push(" DESC LIMIT ");
-        sql.bind(self.find_many_limit());
+        sql.push(" DESC");
         let credentials = exec
             .fetch_all::<credential::Model>(sql)
             .await?
@@ -1107,8 +1127,7 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
         );
         sql.push(" ORDER BY ");
         sql.ident("createdAt");
-        sql.push(" DESC LIMIT ");
-        sql.bind(self.find_many_limit());
+        sql.push(" DESC");
         Ok(self
             .exec()
             .fetch_all::<connection::Model>(sql)

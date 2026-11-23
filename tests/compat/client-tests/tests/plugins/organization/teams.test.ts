@@ -303,7 +303,11 @@ compatScenario(
     const processedLookup = await invitee.client.organization.getInvitation({
       query: { id: invitationId },
     });
-    expect(processedLookup.error).toMatchObject({ status: 400, message: "Invitation not found!" });
+    expect(processedLookup.error).toMatchObject({
+      status: 400,
+      code: "INVITATION_NOT_FOUND",
+      message: "Invitation not found",
+    });
 
     // Deleting a team prunes it from pending invitations but not from accepted ones.
     const pruning = await owner.client.organization.inviteMember({

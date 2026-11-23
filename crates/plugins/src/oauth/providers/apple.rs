@@ -157,11 +157,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                 .cloned()
                 .unwrap_or_else(|| JsValue::String(String::new().into()))
         };
-        let email_verified = match profile.get("email_verified") {
-            Some(JsValue::Bool(value)) => *value,
-            Some(JsValue::String(value)) => value == "true",
-            _ => false,
-        };
+        let email_verified = super::email_verified_claim(profile.get("email_verified"));
         let JsValue::Object(object) = &mut profile else {
             return Err("Invalid Apple profile".into());
         };

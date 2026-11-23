@@ -76,5 +76,5 @@ for (const strategy of [null, "uuid"]) {
     await database.close();
   }
 }
-await writeFile(new URL("../../fixtures/mysql-email-otp-reuse.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
+await writeFile(new URL("../../fixtures/mysql-email-otp-reuse.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", profiles }) + "\n");
 console.log("12 actual MySQL email OTP cases across default and UUID ID strategies");

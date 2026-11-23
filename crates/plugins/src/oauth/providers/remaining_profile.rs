@@ -129,13 +129,13 @@ pub(super) mod own_fields_tests {
     ) {
         let fixture =
             json::parse_value(include_str!("remaining_profile_own_fields_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"].as_str(), Some("1.7.18"));
+        assert_eq!(fixture["better_auth"].as_str(), Some("1.7.27"));
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 276);
         let metadata = &fixture["metadata"];
         assert_eq!(
             metadata["source_revision"],
-            "38f43e390920faa400d51ff0bd18570a424d05ce"
+            "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72"
         );
         assert_eq!(metadata["case_count"].as_u64(), Some(cases.len() as u64));
         let factories: std::collections::BTreeSet<_> = cases

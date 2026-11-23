@@ -155,6 +155,7 @@ fn builtin_endpoint(path: &str) -> Option<OpenApiEndpoint> {
                 "iss",
             ] {
                 _ = properties.insert(name.into(), json!({"type":"string"}));
+                metadata.parameters.push(json!({"name":name,"in":"query","schema":{"type":"string"}}));
             }
             metadata.request_body = Some(
                 json!({"required":false,"content":{"application/json":{"schema":{"type":"object","properties":properties}}}}),
@@ -171,8 +172,12 @@ fn builtin_endpoint(path: &str) -> Option<OpenApiEndpoint> {
         "/get-session" => {
             metadata.operation_id = Some("getSession".into());
             metadata.description = Some("Get the current session".into());
-            // The upstream query is an optional wrapper; getParameters only
-            // reflects a direct object, so its generated parameter list is empty.
+            // The upstream query is an optional wrapper; since 1.7.19
+            // getParameters unwraps it and documents its fields.
+            metadata.parameters = vec![
+                json!({"name":"disableCookieCache","in":"query","schema":{"type":"boolean","description":"Disable cookie cache and fetch session from database"}}),
+                json!({"name":"disableRefresh","in":"query","schema":{"type":"boolean","description":"Disable session refresh. Useful for checking session status, without updating the session"}}),
+            ];
             _ = metadata.responses.insert("200".into(),response("Success",&(json!({"type":["object","null"],"properties":{"session":{"$ref":"#/components/schemas/Session"},"user":{"$ref":"#/components/schemas/User"}},"required":["session","user"]}))));
         }
         _ => return None,

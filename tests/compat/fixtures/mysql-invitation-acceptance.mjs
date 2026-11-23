@@ -76,7 +76,7 @@ try {
   assert.equal(winners[0].status, "canceled");
   const [stored] = await database.pool.promise().query("SELECT status FROM invitation WHERE id = ?", [invitationId]);
   const concurrent = { calls: claims.length, winners: winners.length, status: stored[0].status };
-  await writeFile(new URL("../../fixtures/mysql-invitation-acceptance.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", metadata, cases, concurrent }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-invitation-acceptance.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", metadata, cases, concurrent }) + "\n");
   console.log(`${cases.length} actual MySQL invitation HTTP cases and eight guarded status claims`);
 } finally {
   await database.close();

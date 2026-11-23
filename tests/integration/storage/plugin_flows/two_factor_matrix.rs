@@ -2480,13 +2480,16 @@ async fn two_factor_expired_pending_factor_stage_policy<B: Backend>(db: Db) -> T
                 "totp" => totp.generate_current().to_string(),
                 "backup" => enrollment["backupCodes"][0].as_str().unwrap().to_owned(),
                 _ => {
-                    let _ = call(
+                    // Pinned 1.7.26+: an expired challenge sends no OTP.
+                    let refused = call(
                         &auth,
                         request("/two-factor/send-otp", Some(json!({})), &cookies(&pending)),
-                        200,
+                        401,
                     )
                     .await;
-                    outbox.0.lock().unwrap().last().unwrap().clone()
+                    assert_eq!(body(&refused)["code"], "INVALID_TWO_FACTOR_COOKIE");
+                    assert!(outbox.0.lock().unwrap().is_empty());
+                    "000000".to_owned()
                 }
             };
             let path = format!(
@@ -2510,14 +2513,13 @@ async fn two_factor_expired_pending_factor_stage_policy<B: Backend>(db: Db) -> T
                 (next.id, next.secret, next.backup_codes),
                 (factor.id, factor.secret, factor.backup_codes)
             );
-            assert_eq!(
-                next.failed_verification_count,
-                Some(if disabled && kind == "otp" { 0.0 } else { 3.0 })
-            );
+            // The expired challenge is rejected at lookup, before any factor
+            // stage counts an attempt or consumes a row; only cleanup removes it.
+            assert_eq!(next.failed_verification_count, Some(3.0));
             for (identifier, remains) in [
-                (&key, disabled && kind != "otp"),
-                (&format!("2fa-attempts-{key}"), disabled && kind == "otp"),
-                (&format!("2fa-otp-{key}"), !disabled && kind == "otp"),
+                (&key, disabled),
+                (&format!("2fa-attempts-{key}"), disabled),
+                (&format!("2fa-otp-{key}"), false),
             ] {
                 assert_eq!(
                     db.count_where(
@@ -2710,6 +2712,15 @@ async fn two_factor_trust_syntax_before_cleanup<B: Backend>(db: Db) -> TestResul
         )
         .await?
         .unwrap();
+    // The enrollment challenge lookup used the first sweep. A fresh instance
+    // lets this test detect whether a malformed trust cookie triggers a lookup.
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+            skip_verification_on_enable: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
     let _ = auth
         .store()
         .create_verification(alibi::CreateVerification {
@@ -2870,7 +2881,16 @@ async fn two_factor_trust_lookup_cleanup_policy<B: Backend>(db: Db) -> TestResul
                     .await?,
                 before
             );
-            assert_eq!(db.count_where("SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='unrelated-expired-lookup'",&[]).await?,i64::from(disabled));
+            // Pending TOTP verification already swept this instance. The
+            // trust lookup can still delete its own expired match.
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"='unrelated-expired-lookup'",
+                    &[]
+                )
+                .await?,
+                1
+            );
             assert_eq!(
                 db.count_where(
                     "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",

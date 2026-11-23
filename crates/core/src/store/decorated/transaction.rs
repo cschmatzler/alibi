@@ -573,6 +573,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
         self.inner.create_jwk(data).await
     }
+    async fn create_wallet_address(
+        &self,
+        data: crate::CreateWalletAddress,
+    ) -> AuthResult<crate::WalletAddress> {
+        self.inner.create_wallet_address(data).await
+    }
 
     async fn create_user_record(
         &self,

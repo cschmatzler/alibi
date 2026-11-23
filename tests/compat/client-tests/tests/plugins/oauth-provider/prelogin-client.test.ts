@@ -66,7 +66,7 @@ compatScenario(
         400,
         "invalid_signature",
       ],
-      ["prelogin", { client_id: "missing-client", oauth_query: signed }, 404, "not_found"],
+      ["prelogin", { client_id: "missing-client", oauth_query: signed }, 401, "invalid_client"],
     ] as const) {
       const response = await control({ action: "prelogin", mode, body });
       expect(response.status).toBe(status);

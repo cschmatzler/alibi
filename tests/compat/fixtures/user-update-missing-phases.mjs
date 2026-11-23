@@ -18,10 +18,10 @@ assert.ok(process.argv[2] === undefined || transactions || failures || account, 
 const model = account ? "account" : "user";
 const dateField = account ? "accessTokenExpiresAt" : "banExpires";
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const sqlite = new DatabaseSync(":memory:");
@@ -114,7 +114,7 @@ try {
   }
   if (!failures && !mysqlOnly) assert.deepEqual(profiles[0].cases, profiles[1].cases);
   const filename = `${model}-update-missing-${mysqlOnly ? "mysql-" : ""}${failures ? "failures" : transactions ? "transactions" : "phases"}`;
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.27", profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual ${profiles.map(profile => profile.backend).join("/")} missing-${model} update callback cases`);
 } finally {
   await mysql?.close();

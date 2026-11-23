@@ -142,6 +142,12 @@ pub(crate) async fn list_members_core(
         .database
         .query_organization_members_page(&member_params)
         .await?;
+    if members_raw.is_empty() {
+        return Ok(ListMembersResponse {
+            members: Vec::new(),
+            total,
+        });
+    }
     let members = members_with_users(&members_raw, members_raw.len() as f64, ctx).await?;
 
     Ok(ListMembersResponse { members, total })

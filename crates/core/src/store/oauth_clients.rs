@@ -56,7 +56,15 @@ impl OAuthClientRegistrationWriteError {
     /// Bundled adapters retain unique diagnostics in their constraint contract.
     #[must_use]
     pub fn classify(cause: AuthError, resource_id: Option<String>) -> Self {
-        if matches!(&cause, AuthError::Database(crate::error::DatabaseError::Constraint(message)) if message.to_ascii_lowercase().contains("unique"))
+        let mut root = &cause;
+        while let AuthError::CallbackFailure(wrapped) = root {
+            root = wrapped;
+        }
+        if matches!(root, AuthError::Database(crate::error::DatabaseError::Constraint(message))
+            if {
+                let message = message.to_ascii_lowercase();
+                message.contains("unique") || message.contains("duplicate entry")
+            })
         {
             Self::Collision { cause, resource_id }
         } else {

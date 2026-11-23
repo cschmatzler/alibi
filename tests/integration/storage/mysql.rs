@@ -33,7 +33,7 @@ async fn mysql_passkey_raw_values_match_actual_adapter() -> TestResult {
     let fixture = native::parse_value(include_str!(
         "../../../crates/core/src/store/passkey_mysql_raw_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 48);
     for case in cases {

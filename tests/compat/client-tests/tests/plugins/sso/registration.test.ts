@@ -117,9 +117,24 @@ compatScenario(
       await control({ action: "row", providerId: trustedId })
     ).json()) as any;
     expect(JSON.parse(trustedRow.oidcConfig)).toMatchObject(changedEndpoints);
+    // Better Auth #12692 rejects local-use NAT64 endpoints and allows global unicast.
+    const nat64Id = "nat64-ip-endpoints";
+    const nat64Endpoints = Object.fromEntries(
+      Object.keys(trustedEndpoints).map((field) => [field, `https://[64:ff9b:2::1]/${field}`]),
+    );
+    const nat64Provider = await control({
+      headers: { cookie },
+      body: {
+        ...body,
+        providerId: nat64Id,
+        oidcConfig: { ...body.oidcConfig, ...nat64Endpoints },
+      },
+    });
+    expect(nat64Provider.status).toBe(400);
+    expect(await (await control({ action: "row", providerId: nat64Id })).json()).toBeNull();
     const publicId = "public-ip-endpoints";
     const publicEndpoints = Object.fromEntries(
-      Object.keys(trustedEndpoints).map((field) => [field, `https://[64:ff9b:2::1]/${field}`]),
+      Object.keys(trustedEndpoints).map((field) => [field, `https://[2606:4700::1111]/${field}`]),
     );
     const publicProvider = await control({
       headers: { cookie },

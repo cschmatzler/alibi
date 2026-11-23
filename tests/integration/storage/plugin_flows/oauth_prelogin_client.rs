@@ -79,8 +79,8 @@ async fn oauth_prelogin_client_requires_signed_authorization<B: Backend>(db: Db)
         ),
         (
             json!({"client_id":"missing-client","oauth_query":signed}),
-            404,
-            Some("not_found"),
+            401,
+            Some("invalid_client"),
         ),
     ] {
         let output = enabled

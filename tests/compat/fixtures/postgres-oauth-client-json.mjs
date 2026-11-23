@@ -8,9 +8,9 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { oauthProvider } from "../reference-server/node_modules/@better-auth/oauth-provider/dist/index.mjs";
 import { config } from "../reference-server/probes/schema-parity.mjs";
 
-assert.equal(JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url))).commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
+assert.equal(JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url))).commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter", "@better-auth/oauth-provider"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const schema = `oauth_json_oracle_${randomBytes(8).toString("hex")}`;
@@ -50,7 +50,7 @@ try {
     cases.push({ action, failed, output, stored: rows[0] });
   }
   assert.equal(cases.length, 5);
-  await writeFile(new URL("../../fixtures/postgres-oauth-client-json.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+  await writeFile(new URL("../../fixtures/postgres-oauth-client-json.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
   console.log(`${cases.length} actual PostgreSQL OAuth client native JSON creation/update/failure cases`);
 } finally {
   await db.destroy();

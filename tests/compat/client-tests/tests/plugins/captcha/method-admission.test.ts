@@ -7,6 +7,10 @@ import { events, ip, principals } from "./middleware-shared";
 compatScenario(
   "CAPTCHA physical method rejection precedes CORS router resolution and disabled paths suppress every hook",
   async (ctx) => {
+    // The fixture receipt buffer can outlive a file when the runner reuses a server.
+    const stale = await fetch(`${ctx.baseURL}/__test/captcha-events`);
+    expect(stale.status).toBe(200);
+    await stale.json();
     const s = await principals(ctx);
     const observations = [];
 

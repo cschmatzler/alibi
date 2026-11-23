@@ -18,6 +18,10 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    fn supports_scim_transactions(&self) -> bool {
+        true
+    }
+
     async fn find_scim_identity_tombstone(
         &self,
         connection: &str,
@@ -487,7 +491,8 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         &self,
         id: &str,
         domain: &str,
-    ) -> AuthResult<Option<Vec<alibi_core::store::ScimManagedConnectionEvent>>> {
+        page: alibi_core::store::scim::ScimManagedConnectionEventQuery,
+    ) -> AuthResult<Option<alibi_core::store::scim::ScimManagedConnectionEventPage>> {
         let Some(connection) = connection::Entity::find()
             .filter(connection::Column::ConnectionId.eq(id))
             .filter(connection::Column::ProvisioningDomainId.eq(domain))
@@ -497,25 +502,45 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         else {
             return Ok(None);
         };
-        let mut events = event::Entity::find()
-            .filter(event::Column::ConnectionRecordId.eq(connection.id))
-            .order_by_desc(event::Column::Sequence)
-            .limit(100)
+        let limit = u64::try_from(page.limit)
+            .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+        let offset = u64::try_from(page.offset)
+            .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+        let events = event::Entity::find()
+            .filter(event::Column::ConnectionRecordId.eq(connection.id.clone()))
+            .order_by(
+                event::Column::Sequence,
+                if page.descending {
+                    sea_orm::Order::Desc
+                } else {
+                    sea_orm::Order::Asc
+                },
+            )
+            .limit(limit)
+            .offset(offset)
             .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
-        events.reverse();
+        let total = event::Entity::find()
+            .filter(event::Column::ConnectionRecordId.eq(connection.id))
+            .count(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         Ok(Some(
-            events
-                .into_iter()
-                .map(|event| alibi_core::store::ScimManagedConnectionEvent {
-                    sequence: i64::from(event.sequence),
-                    kind: event.kind,
-                    actor_id: event.actor_id,
-                    credential_id: event.credential_id,
-                    created_at: event.created_at,
-                })
-                .collect(),
+            alibi_core::store::scim::ScimManagedConnectionEventPage {
+                events: events
+                    .into_iter()
+                    .map(|event| alibi_core::store::ScimManagedConnectionEvent {
+                        sequence: i64::from(event.sequence),
+                        kind: event.kind,
+                        actor_id: event.actor_id,
+                        credential_id: event.credential_id,
+                        created_at: event.created_at,
+                    })
+                    .collect(),
+                total: i64::try_from(total)
+                    .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+            },
         ))
     }
 
@@ -920,10 +945,6 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         let credentials = credential::Entity::find()
             .filter(credential::Column::ConnectionRecordId.eq(connection.id.clone()))
             .order_by_desc(credential::Column::CreatedAt)
-            .limit(
-                u64::try_from(self.config.advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
             .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?
@@ -943,10 +964,6 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         Ok(connection::Entity::find()
             .filter(connection::Column::ProvisioningDomainId.eq(domain))
             .order_by_desc(connection::Column::CreatedAt)
-            .limit(
-                u64::try_from(self.config.advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
             .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?

@@ -7,7 +7,7 @@ pub(super) async fn exercise<S: AuthSchema>(store: &impl UserStore<S>) {
         "../../../../crates/core/src/store/user_update_falsy_id_cases.json"
     ))
     .unwrap();
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 8);
     let user = store

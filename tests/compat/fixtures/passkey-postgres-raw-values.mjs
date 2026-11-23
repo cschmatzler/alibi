@@ -8,9 +8,9 @@ import { passkey } from "../reference-server/node_modules/@better-auth/passkey/d
 
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
 for (const name of ["passkey", "kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 const schema = `passkey_oracle_${randomBytes(8).toString("hex")}`;
 const admin = new pg.Client({ connectionString: process.env.BETTER_AUTH_TEST_POSTGRES_URL });
@@ -46,5 +46,5 @@ try {
   await admin.end();
 }
 assert.equal(cases.length, 30);
-await writeFile(new URL("../../../crates/core/src/store/passkey_postgres_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/passkey_postgres_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual PostgreSQL passkey raw-value cases`);

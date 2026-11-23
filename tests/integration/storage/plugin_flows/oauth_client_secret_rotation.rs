@@ -347,8 +347,10 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
         assert_eq!(stored.metadata, old.metadata);
         if prefixed {
             for invalid in [raw_secret.to_owned(), format!("WRONG_{raw_secret}")] {
+                // A secret without the prefix is any other wrong secret:
+                // `client_secret_post` answers 400 without a challenge.
                 let error = auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Introspect").with_body(&json!({"client_id":id,"client_secret":invalid,"token":"not-issued"}))?,EndpointOptions::default()).await.unwrap_err();
-                assert_eq!(error.error.status_code(), 401);
+                assert_eq!(error.error.status_code(), 400);
                 assert!(
                     error
                         .headers

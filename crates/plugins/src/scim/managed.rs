@@ -1,6 +1,6 @@
 use super::{AuthResult, ScimPlugin, Value};
 use alibi_core::endpoint::{EndpointCall, EndpointInput, EndpointResponse, ServerEndpoint};
-use alibi_core::utils::json::JsValue;
+use alibi_core::utils::json::{JsObject, JsValue};
 use alibi_core::{AuthContext, AuthError, AuthSchema};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, SubsecRound, Utc};
@@ -40,6 +40,121 @@ fn body_string(body: &JsValue, name: &str, min: usize) -> AuthResult<String> {
     }
     Ok(text.into())
 }
+fn connection_id(body: &JsValue) -> AuthResult<&str> {
+    let id = body.get("connectionId");
+    let Some(id) = id.and_then(JsValue::as_str) else {
+        return Err(crate::endpoint::validation(format!(
+            "[body.connectionId] Invalid input: expected string, received {}",
+            crate::authentication_helpers::json_type(id)
+        )));
+    };
+    if !id.starts_with("ba_scim_connection_") {
+        return Err(crate::endpoint::validation(
+            r#"[body.connectionId] Invalid string: must start with "ba_scim_connection_""#,
+        ));
+    }
+    if id.encode_utf16().count() > 255 {
+        return Err(crate::endpoint::validation(
+            "[body.connectionId] Too big: expected string to have <=255 characters",
+        ));
+    }
+    Ok(id)
+}
+/// Mirrors `z.number().int().min(minimum).max(maximum).optional().default(default)`.
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    reason = "JavaScript number range checks"
+)]
+fn event_page_integer(
+    body: &JsValue,
+    name: &str,
+    (minimum, maximum): (i64, Option<i64>),
+    default: i64,
+    issues: &mut Vec<String>,
+) -> i64 {
+    let value = body.get(name);
+    let number = match value {
+        None | Some(JsValue::Undefined) => return default,
+        Some(JsValue::Number(number)) if number.is_finite() => *number,
+        value => {
+            issues.push(format!(
+                "[body.{name}] Invalid input: expected number, received {}",
+                crate::authentication_helpers::json_type(value)
+            ));
+            return default;
+        }
+    };
+    if number.fract() != 0.0 {
+        issues.push(format!(
+            "[body.{name}] Invalid input: expected int, received number"
+        ));
+        return default;
+    }
+    if number > 9_007_199_254_740_991.0 {
+        issues.push(format!(
+            "[body.{name}] Too big: expected int to be <=9007199254740991"
+        ));
+    } else if number < -9_007_199_254_740_991.0 {
+        issues.push(format!(
+            "[body.{name}] Too small: expected int to be >=-9007199254740991"
+        ));
+    }
+    if number < minimum as f64 {
+        issues.push(format!(
+            "[body.{name}] Too small: expected number to be >={minimum}"
+        ));
+    }
+    if let Some(maximum) = maximum
+        && number > maximum as f64
+    {
+        issues.push(format!(
+            "[body.{name}] Too big: expected number to be <={maximum}"
+        ));
+    }
+    number as i64
+}
+/// Reports every events-body issue in schema order, as the reference's object parser does.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "validated page bounds are exact integers"
+)]
+fn validate_event_page(body: &JsValue) -> AuthResult<JsObject> {
+    let mut issues = Vec::new();
+    let mut output = JsObject::new();
+    for (name, field) in [
+        ("connectionId", connection_id(body).map(str::to_owned)),
+        (
+            "provisioningDomainId",
+            body_string(body, "provisioningDomainId", 1),
+        ),
+    ] {
+        match field {
+            Ok(value) => _ = output.insert(name.into(), JsValue::String(value.into())),
+            Err(AuthError::Api { message, .. }) => issues.push(message),
+            Err(error) => return Err(error),
+        }
+    }
+    let limit = event_page_integer(body, "limit", (1, Some(100)), 100, &mut issues);
+    let offset = event_page_integer(body, "offset", (0, None), 0, &mut issues);
+    output.extend([
+        ("limit".into(), JsValue::Number(limit as f64)),
+        ("offset".into(), JsValue::Number(offset as f64)),
+    ]);
+    match body.get("sortDirection") {
+        None | Some(JsValue::Undefined) => {}
+        Some(value) if matches!(value.as_str(), Some("asc" | "desc")) => {
+            _ = output.insert("sortDirection".into(), value.clone());
+        }
+        Some(_) => issues
+            .push(r#"[body.sortDirection] Invalid option: expected one of "asc"|"desc""#.into()),
+    }
+    if issues.is_empty() {
+        Ok(output)
+    } else {
+        Err(crate::endpoint::validation(issues.join("; ")))
+    }
+}
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = call.body().ok_or_else(|| {
         crate::endpoint::validation("[body] Invalid input: expected object, received undefined")
@@ -61,30 +176,19 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             query: call.query().cloned(),
         });
     }
+    if call.operation_id() == "listSCIMManagedConnectionEvents" {
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(validate_event_page(body)?)),
+            query: call.query().cloned(),
+        });
+    }
     if matches!(
         call.operation_id(),
         "decommissionSCIMManagedConnection"
             | "getSCIMManagedConnection"
             | "revokeSCIMManagedCredential"
-            | "listSCIMManagedConnectionEvents"
     ) {
-        let id = body.get("connectionId");
-        let Some(id) = id.and_then(JsValue::as_str) else {
-            return Err(crate::endpoint::validation(format!(
-                "[body.connectionId] Invalid input: expected string, received {}",
-                crate::authentication_helpers::json_type(id)
-            )));
-        };
-        if !id.starts_with("ba_scim_connection_") {
-            return Err(crate::endpoint::validation(
-                r#"[body.connectionId] Invalid string: must start with "ba_scim_connection_""#,
-            ));
-        }
-        if id.encode_utf16().count() > 255 {
-            return Err(crate::endpoint::validation(
-                "[body.connectionId] Too big: expected string to have <=255 characters",
-            ));
-        }
+        let id = connection_id(body)?;
         let mut extra = indexmap::IndexMap::new();
         if call.operation_id() == "revokeSCIMManagedCredential" {
             let value = body.get("credentialId");
@@ -147,23 +251,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let rotating = call.operation_id() == "rotateSCIMManagedCredential";
     let mut output = indexmap::IndexMap::new();
     if rotating {
-        let id = body.get("connectionId");
-        let Some(id) = id.and_then(JsValue::as_str) else {
-            return Err(crate::endpoint::validation(format!(
-                "[body.connectionId] Invalid input: expected string, received {}",
-                crate::authentication_helpers::json_type(id)
-            )));
-        };
-        if !id.starts_with("ba_scim_connection_") {
-            return Err(crate::endpoint::validation(
-                r#"[body.connectionId] Invalid string: must start with "ba_scim_connection_""#,
-            ));
-        }
-        if id.encode_utf16().count() > 255 {
-            return Err(crate::endpoint::validation(
-                "[body.connectionId] Too big: expected string to have <=255 characters",
-            ));
-        }
+        let id = connection_id(body)?;
         _ = output.insert("connectionId".into(), JsValue::String(id.into()));
     }
 
@@ -383,7 +471,8 @@ impl ScimPlugin {
         )
     }
 
-    /// List the newest 100 connection events in ascending sequence order.
+    /// List the newest 100 connection events in ascending sequence order. Add `limit`,
+    /// `offset` or `sortDirection` to the body to page through the history.
     /// # Errors
     /// Returns an error if the arguments cannot be serialized.
     pub fn list_managed_connection_events_endpoint(
@@ -406,16 +495,42 @@ impl ScimPlugin {
             .get("connectionId")
             .and_then(JsValue::as_str)
             .ok_or_else(|| AuthError::internal("Validated ID missing"))?;
-        let events = ctx
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "validated page bounds are integers"
+        )]
+        let integer = |name: &str, default: i64| {
+            body.get(name)
+                .and_then(JsValue::as_f64)
+                .map_or(default, |value| value as i64)
+        };
+        let (limit, offset) = (integer("limit", 100), integer("offset", 0));
+        let direction = body.get("sortDirection").and_then(JsValue::as_str);
+        let page = ctx
             .database
-            .list_scim_managed_connection_events(id, &body_string(body, "provisioningDomainId", 1)?)
+            .list_scim_managed_connection_events(
+                id,
+                &body_string(body, "provisioningDomainId", 1)?,
+                alibi_core::store::scim::ScimManagedConnectionEventQuery {
+                    limit,
+                    offset,
+                    descending: direction != Some("asc"),
+                },
+            )
             .await?
             .ok_or_else(|| AuthError::Api {
                 status: 404,
                 code: None,
                 message: "Managed SCIM connection not found".into(),
             })?;
-        EndpointResponse::json(&serde_json::json!({"events":events}))
+        let mut events = page.events;
+        // Without a direction the newest page is read and returned oldest first.
+        if direction.is_none() {
+            events.reverse();
+        }
+        EndpointResponse::json(
+            &serde_json::json!({"events":events,"limit":limit,"offset":offset,"total":page.total}),
+        )
     }
 
     /// Revoke one domain-owned credential through the trusted server API.

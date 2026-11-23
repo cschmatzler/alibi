@@ -122,11 +122,10 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
             "oauthClientResource",
         ])
         .await?;
-    for (input, cookie, attach, status, error, description) in [
+    for (input, cookie, status, error, description) in [
         (
             json!({}),
             cookies(&owner),
-            true,
             400,
             "invalid_request",
             "Missing parameters",
@@ -134,7 +133,6 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         (
             json!({"selected":true}),
             cookies(&owner),
-            true,
             400,
             "invalid_request",
             "missing oauth query",
@@ -142,7 +140,6 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         (
             json!({"selected":true,"oauth_query":format!("{signed}&sig=duplicate")}),
             cookies(&owner),
-            true,
             400,
             "invalid_signature",
             "",
@@ -150,7 +147,6 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         (
             json!({"selected":true,"oauth_query":signed}),
             String::new(),
-            true,
             401,
             "",
             "",
@@ -158,25 +154,16 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         (
             json!({"selected":42,"oauth_query":signed}),
             cookies(&owner),
-            true,
             400,
             "",
             "",
-        ),
-        (
-            json!({"selected":true,"oauth_query":signed}),
-            cookies(&owner),
-            false,
-            401,
-            "invalid_request",
-            "request not found",
         ),
     ] {
         let denied = Box::pin(auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Continue").with_body(&input)?,
             EndpointOptions {
                 headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
-                request: attach.then(|| request("/oauth2/continue", Some(json!({})), &cookie)),
+                request: Some(request("/oauth2/continue", Some(json!({})), &cookie)),
                 ..Default::default()
             },
         ))
@@ -200,11 +187,6 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         )?,
         EndpointOptions {
             headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-            request: Some(request(
-                "/oauth2/continue",
-                Some(json!({})),
-                &cookies(&owner),
-            )),
             ..Default::default()
         },
     ))

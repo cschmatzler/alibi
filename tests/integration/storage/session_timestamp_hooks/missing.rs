@@ -50,7 +50,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool) -> TestResult {
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../fixtures/session-timestamp-missing.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if db.is_postgres() {
         "postgres"
     } else {

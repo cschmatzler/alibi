@@ -42,5 +42,5 @@ try {
 }
 assert.equal(cases.length, 48);
 assert.equal(cases.filter(row => row.error).length, 15);
-await writeFile(new URL("../../../crates/core/src/store/passkey_mysql_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", mysql: mysqlVersion, mysql2: mysql2Version, cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/passkey_mysql_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", mysql: mysqlVersion, mysql2: mysql2Version, cases }) + "\n");
 console.log(`${cases.length} actual MySQL passkey raw-value cases (mysql2 ${mysql2Version})`);

@@ -12,8 +12,82 @@ mod redirect_policy;
 mod request_uri;
 backend_tests!(
     oauth_authorization_resolves_request_uri_before_validation,
-    oauth_authorization_admits_client_and_produces_signed_login_redirect
+    oauth_authorization_admits_client_and_produces_signed_login_redirect,
+    oauth_authorization_requires_explicit_openid_and_matches_web_redirect_exactly
 );
+#[derive(Debug)]
+struct LocalWebRedirect;
+
+impl alibi::plugins::OAuthInsecureRedirectUriPolicy for LocalWebRedirect {
+    fn allows(&self, uri: &url::Url) -> alibi::AuthResult<bool> {
+        Ok(uri.host_str() == Some("localhost"))
+    }
+}
+
+async fn oauth_authorization_requires_explicit_openid_and_matches_web_redirect_exactly<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = alibi::plugins::OAuthProviderConfig {
+        require_openid: true,
+        allow_insecure_redirect_uri: Some(std::sync::Arc::new(LocalWebRedirect)),
+        ..Default::default()
+    };
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(config))
+            .build(),
+    )
+    .await?;
+    let owner = Box::pin(signup(&auth, "oidc-policy-owner@example.test")).await;
+    let client = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({
+            "application_type": "web",
+            "redirect_uris": ["http://localhost:3210/callback"],
+            "skip_consent": true,
+            "require_pkce": false,
+        }))?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .decode()?;
+    for (redirect, scope, expected) in [
+        ("http://localhost:3210/callback", None, Some("invalid_scope")),
+        ("http://localhost:3210/callback", Some("email"), Some("invalid_scope")),
+        ("http://localhost:3211/callback", Some("openid"), Some("invalid_redirect")),
+        ("http://localhost:3210/callback", Some("openid"), None),
+    ] {
+        let mut query = json!({
+            "client_id": client["client_id"],
+            "response_type": "code",
+            "redirect_uri": redirect,
+            "state": "oidc-policy",
+        });
+        if let Some(scope) = scope {
+            query["scope"] = json!(scope);
+        }
+        let mut physical = request("/oauth2/authorize", None, &cookies(&owner));
+        _ = physical.headers.insert("accept".into(), "application/json".into());
+        let response = Box::pin(authorization_response(&auth, &query, physical, false)).await?;
+        assert_eq!(response.status, 200);
+        let target = url::Url::parse(body(&response)["url"].as_str().unwrap())?;
+        let fields = target.query_pairs().collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(fields.get("error").map(|value| value.as_ref()), expected);
+        if expected == Some("invalid_redirect") {
+            assert_eq!(target.path(), "/api/auth/error");
+        } else {
+            assert_eq!(target.port(), Some(3210));
+            assert_eq!(target.path(), "/callback");
+            assert!(fields.contains_key(if expected.is_none() { "code" } else { "error_description" }));
+        }
+    }
+    Ok(())
+}
+
 async fn oauth_authorization_resolves_request_uri_before_validation<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -710,7 +784,7 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
             error
         );
     }
-    let missing = Box::pin(
+    let headers_only = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize").with_query(&input)?,
             EndpointOptions {
@@ -723,9 +797,11 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
             },
         ),
     )
-    .await
-    .unwrap_err();
-    assert_eq!(missing.error.status_code(), 401);
+    .await?
+    .into_response()?;
+    assert_eq!(headers_only.status, 200);
+    let target = url::Url::parse(ORIGIN)?.join(body(&headers_only)["url"].as_str().unwrap())?;
+    assert_eq!(target.path(), "/login");
     assert_eq!(
         db.tables(&[
             "user",
@@ -1209,7 +1285,7 @@ async fn assert_redirect_policy<S: AuthSchema>(
             (
                 json!({"response_type":"token"}),
                 "\u{feff}https://preview.fixture.test/callback",
-                Some("raw_url_error"),
+                Some("unsupported_response_type"),
                 false,
                 false,
                 false,
@@ -1247,15 +1323,6 @@ async fn assert_redirect_policy<S: AuthSchema>(
                 "http={http}, input={input}"
             );
             assert!(!response.headers.contains_key("set-cookie"));
-            if error == Some("raw_url_error") {
-                assert_eq!(response.status, 500);
-                assert_eq!(
-                    db.tables(&["user", "account", "session", "verification", "oauthClient"])
-                        .await?,
-                    before
-                );
-                continue;
-            }
             assert_eq!(response.status, 200);
             let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
             if let Some(error) = error {
@@ -1863,14 +1930,14 @@ async fn assert_authorization_schema<S: AuthSchema>(
         for (patch, error, description, trusted) in [
             (
                 json!({"redirect_uri":"http://localhost./callback"}),
-                "invalid_redirect",
-                "invalid redirect uri",
+                "invalid_request",
+                "Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
                 false,
             ),
             (
                 json!({"redirect_uri":"http://[::ffff:127.0.0.1]/callback"}),
-                "invalid_redirect",
-                "invalid redirect uri",
+                "invalid_request",
+                "Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
                 false,
             ),
             (

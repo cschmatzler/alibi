@@ -4,8 +4,8 @@ import { memoryAdapter } from "../reference-server/node_modules/@better-auth/mem
 import { passkey } from "../reference-server/node_modules/@better-auth/passkey/dist/index.mjs";
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/passkey/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/passkey/package.json", import.meta.url))).version, "1.7.27");
 const cases = [];
 for (const [kind, rollback, concurrent] of [
   ["commit-disjoint", false, "other"], ["rollback-disjoint", true, "other"],

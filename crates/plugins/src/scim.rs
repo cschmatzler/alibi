@@ -6,6 +6,10 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
+
+const NATIVE_TRANSACTION_MESSAGE: &str =
+    "The scim plugin requires a database adapter with native transaction support.";
+
 mod attribute_names;
 mod authentication;
 mod collection;
@@ -336,11 +340,20 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     async fn on_http_request_action(
         &self,
         req: &AuthRequest,
-        _ctx: &AuthContext<S>,
+        ctx: &AuthContext<S>,
     ) -> AuthResult<Option<alibi_core::HttpRequestAction>> {
         let path = req.url().map_or_else(|| req.path(), url::Url::path);
         if !path.contains("/scim/v2/") {
             return Ok(None);
+        }
+        if !ctx.database.supports_scim_transactions() {
+            return Ok(Some(alibi_core::HttpRequestAction::Respond(
+                resources::to_http_response(&resources::error(
+                    501,
+                    NATIVE_TRANSACTION_MESSAGE,
+                    None,
+                ))?,
+            )));
         }
         if req.method() == &HttpMethod::Delete {
             let mut replacement = req.clone();
@@ -671,7 +684,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
             })
         }
     }
-    async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         self.validate_connections()?;
         if let Some(options) = &self.managed_connections {
             if options.credential_hash_secret.encode_utf16().count() < 32 {
@@ -685,6 +698,11 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
                 ));
             }
         }
+        if !ctx.database.supports_scim_transactions() {
+            tracing::error!(
+                "{NATIVE_TRANSACTION_MESSAGE} SCIM routes and SCIM connection changes will return 501."
+            );
+        }
         Ok(())
     }
     async fn on_endpoint(
@@ -692,6 +710,28 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if !ctx.database.supports_scim_transactions() {
+            if call.path().is_some_and(|path| path.starts_with("/scim/v2/")) {
+                return Ok(resources::error(501, NATIVE_TRANSACTION_MESSAGE, None));
+            }
+            let operation = call.operation_id();
+            if matches!(operation, "reconcileSCIMProjection" | "decommissionSCIMConnection")
+                || self.managed_connections.is_some()
+                    && matches!(
+                        operation,
+                        "createSCIMManagedConnection"
+                            | "decommissionSCIMManagedConnection"
+                            | "revokeSCIMManagedCredential"
+                            | "rotateSCIMManagedCredential"
+                    )
+            {
+                return Err(AuthError::Api {
+                    status: 501,
+                    code: Some("SCIM_REQUIRES_NATIVE_TRANSACTIONS".into()),
+                    message: NATIVE_TRANSACTION_MESSAGE.into(),
+                });
+            }
+        }
         if call.operation_id() == "deleteSCIMUser" {
             return self.delete_user(call, ctx).await;
         }

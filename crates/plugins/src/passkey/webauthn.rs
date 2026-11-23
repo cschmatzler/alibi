@@ -127,13 +127,44 @@ struct ChallengeCookieClaims {
     iat: usize,
 }
 
-/// Select the original signed origin only when it belongs to the explicit allowlist.
+pub(super) enum CeremonyOrigin {
+    Expected(String),
+    Untrusted,
+    Unconfigured,
+}
+
+fn uses_exact_dynamic_origins(config: &PasskeyConfig, auth_config: &AuthConfig) -> bool {
+    let rp_id = &config.rp_id;
+    if !config.origin.is_empty() || !config.origins.is_empty() || rp_id.is_empty() {
+        return false;
+    }
+    auth_config.dynamic_base_url.as_ref().is_some_and(|dynamic| {
+        dynamic.allowed_hosts.iter().any(|pattern| {
+            let host = pattern
+                .split_once("://")
+                .map_or(pattern.as_str(), |(_, host)| host)
+                .split([':', '/'])
+                .next()
+                .unwrap_or_default();
+            let Some(wildcard) = host.rfind(['*', '?']) else {
+                return false;
+            };
+            let suffix = host.get(wildcard + 1..).unwrap_or_default().trim_start_matches('.');
+            suffix.is_empty()
+                || suffix == rp_id
+                || suffix.ends_with(&format!(".{rp_id}"))
+                || rp_id.ends_with(&format!(".{suffix}"))
+        })
+    })
+}
+
+/// Select the expected origin for checking the original signed client data.
 pub(super) fn ceremony_origin(
     config: &PasskeyConfig,
     req: &impl alibi_core::session::SessionRequest,
     response: Option<&alibi_core::utils::json::JsValue>,
     auth_config: &AuthConfig,
-) -> Option<String> {
+) -> CeremonyOrigin {
     let reported = response
         .and_then(|response| response.get("response"))
         .and_then(|response| response.get("clientDataJSON"))
@@ -149,13 +180,26 @@ pub(super) fn ceremony_origin(
             client
                 .get("origin")
                 .and_then(Value::as_str)
+                .filter(|origin| !origin.is_empty())
                 .map(str::to_owned)
         });
     if !config.origins.is_empty() || !config.origin.is_empty() {
         return reported
             .filter(|origin| config.origins.contains(origin) || config.origin == *origin)
             .or_else(|| (!config.origin.is_empty()).then(|| config.origin.clone()))
-            .or_else(|| config.origins.first().cloned());
+            .or_else(|| {
+                config.origins.iter().find(|origin| !origin.is_empty()).cloned()
+            })
+            .map_or(CeremonyOrigin::Unconfigured, CeremonyOrigin::Expected);
+    }
+    if uses_exact_dynamic_origins(config, auth_config) {
+        // The request selects the dynamic base URL, so only the resolved exact
+        // origin entries grant trust for a shared RP ID.
+        return reported
+            .filter(|origin| {
+                !origin.contains(['*', '?']) && auth_config.trusted_origins.contains(origin)
+            })
+            .map_or(CeremonyOrigin::Untrusted, CeremonyOrigin::Expected);
     }
     let base = if auth_config.base_url.is_empty() {
         req.physical_request()
@@ -171,6 +215,7 @@ pub(super) fn ceremony_origin(
             base.as_ref() == Some(origin) || auth_config.trusted_origins.contains(origin)
         })
         .or(base)
+        .map_or(CeremonyOrigin::Unconfigured, CeremonyOrigin::Expected)
 }
 
 pub(super) fn challenge_cookie_name(auth_config: &AuthConfig, config: &PasskeyConfig) -> String {
@@ -205,8 +250,9 @@ pub(super) fn build_verification_core(
     auth_config: &AuthConfig,
     origin: &str,
 ) -> AuthResult<Verifier> {
-    // Retain the high-level builder's RP/origin configuration validation.
-    _ = build_webauthn(config, auth_config, origin)?;
+    if !uses_exact_dynamic_origins(config, auth_config) {
+        _ = build_webauthn(config, auth_config, origin)?;
+    }
     let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;

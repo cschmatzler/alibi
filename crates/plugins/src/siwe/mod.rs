@@ -99,12 +99,17 @@ impl SiwePlugin {
     ) -> AuthResult<AuthResponse> {
         match self.verify(request, ctx, body).await {
             Ok(response) | Err(SiweCallbackError::Api(response)) => Ok(response),
-            Err(error) => Ok(AuthResponse::json(
-                401,
-                &json!({
-                    "message":"Something went wrong. Please try again later.", "error":error.to_string(), "status":401
-                }),
-            )?),
+            Err(error) => {
+                // The cause is logged, never returned: it can carry internal
+                // details such as a database error.
+                tracing::error!(%error, "Failed to verify SIWE message");
+                Ok(AuthResponse::json(
+                    401,
+                    &json!({
+                        "message":"Something went wrong. Please try again later.", "status":401
+                    }),
+                )?)
+            }
         }
     }
 
@@ -227,17 +232,13 @@ impl SiwePlugin {
         };
         let user = if let Some(user) = user {
             if exact_wallet.is_none() {
-                self.link_wallet(ctx, &user.id(), &address, chain_id, false)
+                self.link_wallet(ctx, &user.id(), &address, chain_id)
                     .await?;
             }
             user
         } else {
-            let user_2 = self
-                .create_user(ctx, &address, body.email.as_deref())
-                .await?;
-            self.link_wallet(ctx, &user_2.id(), &address, chain_id, true)
-                .await?;
-            user_2
+            self.create_user(ctx, &address, chain_id, body.email.as_deref())
+                .await?
         };
         let meta = RequestMeta::from_request(request);
         let issued =
@@ -247,8 +248,8 @@ impl SiwePlugin {
         let token = issued.session.token();
         let mut response = AuthResponse::json(200, &json!({"token":token,"success":true,"user":{"id":issued.user.id(),"walletAddress":address,"chainId":chain_id}})).map_err(|error| storage_error(error.into()))?;
         Self::session_cookies(request, ctx, token, &mut response).map_err(|error| match error {
-            // The installed SIWE endpoint catches ordinary serializer errors and
-            // returns its own 401 body with the serializer message.
+            // The installed SIWE endpoint catches ordinary serializer errors,
+            // logs them and returns its own generic 401 body.
             AuthError::CallbackFailure(cause) => match *cause {
                 AuthError::Internal(message) => SiweCallbackError::Failed(message),
                 other => storage_error(other),
@@ -262,6 +263,7 @@ impl SiwePlugin {
         &self,
         ctx: &AuthContext<S>,
         address: &str,
+        chain_id: f64,
         email: Option<&str>,
     ) -> SiweCallbackResult<alibi_core::AdapterRecord<S::User>> {
         let normalized_email = email.map(str::to_lowercase);
@@ -314,33 +316,34 @@ impl SiwePlugin {
             .with_name(profile.name.unwrap_or_else(|| address.to_owned()));
         create.image = Some(profile.avatar.unwrap_or_default());
         apply_default_role(ctx, &mut create);
-        let created = ctx
-            .database
-            .create_user_with_source_record(
-                create.clone(),
-                alibi_core::user_validation::UserValidationSource::creation("siwe"),
-            )
-            .await;
+        let created = create_user_with_wallet(ctx, create.clone(), address, chain_id).await;
         let created = match created {
             Ok(user) => Ok(user),
             Err(error) if Some(&user_email) == normalized_email.as_ref() => {
                 let email_3 = normalized_email.as_deref().unwrap_or_default();
-                match ctx
+                // Fall back to the wallet email only when another user claimed
+                // the email; a registered wallet means this sign-up already committed.
+                let fallback = match ctx
                     .database
                     .get_user_by_email_record(&alibi_core::utils::json::JsString::from(email_3))
                     .await
                 {
-                    Ok(Some(_)) => {
+                    Ok(Some(_)) => ctx
+                        .database
+                        .get_wallet_address(address, Some(chain_id))
+                        .await
+                        .map(|wallet| wallet.is_none()),
+                    Ok(None) => Ok(false),
+                    Err(error_2) => Err(error_2),
+                };
+                match fallback {
+                    Ok(true) => {
                         create.email = Some(wallet_email);
-                        ctx.database
-                            .create_user_with_source_record(
-                                create,
-                                alibi_core::user_validation::UserValidationSource::creation("siwe"),
-                            )
+                        create_user_with_wallet(ctx, create, address, chain_id)
                             .await
                             .map_err(storage_error)
                     }
-                    Ok(None) => Err(storage_error(error)),
+                    Ok(false) => Err(storage_error(error)),
                     Err(error_2) => Err(storage_error(error_2)),
                 }
             }
@@ -358,7 +361,6 @@ impl SiwePlugin {
         user_id: &str,
         address: &str,
         chain_id: f64,
-        primary: bool,
     ) -> SiweCallbackResult<()> {
         _ = ctx
             .database
@@ -366,26 +368,13 @@ impl SiwePlugin {
                 user_id: user_id.to_owned(),
                 address: address.to_owned(),
                 chain_id,
-                is_primary: primary,
+                is_primary: false,
             })
             .await
             .map_err(storage_error)?;
-        let mut number = ryu_js::Buffer::new();
         _ = ctx
             .database
-            .create_account_record(CreateAccount {
-                additional_fields: FieldValues::default(),
-                user_id: user_id.to_owned(),
-                account_id: format!("{address}:{}", number.format(chain_id)).into(),
-                provider_id: "siwe".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: None,
-            })
+            .create_account_record(wallet_account(user_id, address, chain_id))
             .await
             .map_err(storage_error)?;
         Ok(())
@@ -458,8 +447,60 @@ fn endpoint_error(message: &str, code: &str) -> SiweCallbackError {
     }
 }
 
+fn wallet_account(user_id: &str, address: &str, chain_id: f64) -> CreateAccount {
+    let mut number = ryu_js::Buffer::new();
+    CreateAccount {
+        additional_fields: FieldValues::default(),
+        user_id: user_id.to_owned(),
+        account_id: format!("{address}:{}", number.format(chain_id)).into(),
+        provider_id: "siwe".to_owned(),
+        access_token: None,
+        refresh_token: None,
+        id_token: None,
+        access_token_expires_at: None,
+        refresh_token_expires_at: None,
+        scope: None,
+        password: None,
+    }
+}
+
+/// Create the user, its primary wallet address and its wallet account in one
+/// transaction, so a failed wallet or account insert leaves no user behind.
+async fn create_user_with_wallet<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    create: CreateUser,
+    address: &str,
+    chain_id: f64,
+) -> AuthResult<alibi_core::AdapterRecord<S::User>> {
+    let address = address.to_owned();
+    alibi_core::store::transaction(ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            let user = tx
+                .create_user_with_source_record(
+                    create,
+                    alibi_core::user_validation::UserValidationSource::creation("siwe"),
+                )
+                .await?;
+            let user_id = user.id().into_owned();
+            _ = tx
+                .create_wallet_address(CreateWalletAddress {
+                    user_id: user_id.clone(),
+                    address: address.clone(),
+                    chain_id,
+                    is_primary: true,
+                })
+                .await?;
+            _ = tx
+                .create_account_record(wallet_account(&user_id, &address, chain_id))
+                .await?;
+            Ok(user)
+        })
+    })
+    .await
+}
+
 fn storage_error(error: AuthError) -> SiweCallbackError {
-    if error.status_code() < 500 || matches!(error, AuthError::Upstream { .. }) {
+    if alibi_core::endpoint::is_endpoint_api_error(&error) {
         SiweCallbackError::Api(error.to_auth_response())
     } else {
         SiweCallbackError::Failed(error.to_string())

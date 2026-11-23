@@ -89,7 +89,9 @@ async fn server_revoke_sessions_deletes_all_owned_rows_and_rejects_cached_author
             .map(String::as_str),
         Some("logical")
     );
-    assert!(revoked.headers().get_all("set-cookie").next().is_none());
+    assert!(revoked.headers().get_all("set-cookie").any(|cookie| {
+        cookie.starts_with("better-auth.session_token=;") && cookie.contains("Max-Age=0")
+    }));
     let after = db.tables(&["user", "account", "session"]).await?;
     assert_eq!(after[..2], before[..2]);
     assert!(auth.store().get_session(&token(&peers[0])).await?.is_none());

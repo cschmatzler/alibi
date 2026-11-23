@@ -155,7 +155,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str, omit: bo
     } else {
         include_str!("../../fixtures/session-timestamp-hooks.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let profiles = fixture["profiles"].as_array().unwrap();
     assert_eq!(profiles.len(), 2);
     let backend = if db.is_postgres() {

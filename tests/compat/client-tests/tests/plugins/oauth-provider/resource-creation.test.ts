@@ -6,12 +6,16 @@ compatScenario(
   "Resource creation durably stores policy and admits only enabled resources with allowed scopes",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: unknown) =>
-      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+    const control = (input: unknown, transport = actor.fetch) =>
+      transport(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       });
+    // Drain process-owned receipts from previous files before recording this scenario.
+    const stale = await control({ action: "resource-privileges-state" }, fetch);
+    expect(stale.status).toBe(200);
+    await stale.json();
     const signup = await control({
       action: "signup",
       body: { email: ctx.uniqueEmail("resource-owner"), name: "Owner", password: "password123" },

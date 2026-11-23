@@ -31,7 +31,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, deferred: bool, string: b
     } else {
         include_str!("../../../fixtures/session-timestamp-hooks-secondary-transactions.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if db.is_postgres() {
         "postgres"
     } else {

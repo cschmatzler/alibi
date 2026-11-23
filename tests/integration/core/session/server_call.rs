@@ -386,13 +386,13 @@ impl<S: AuthSchema> EndpointHook<S> for SessionHooks {
         _: &AuthContext<S>,
         mut response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
-        let (user, session) = call.session().unwrap();
-        assert_eq!(user.id, session.user_id);
         let mut value = response.result().as_ref().unwrap().to_json_value()?;
         if value.is_null() {
-            assert!(session.expires_at < Utc::now());
+            assert!(call.session().is_none());
             assert!(call.virtual_session().is_none());
         } else {
+            let (user, session) = call.session().unwrap();
+            assert_eq!(user.id, session.user_id);
             *value.pointer_mut("/user/name").unwrap() = json!("Hook name");
             response.replace(JsValue::from(value));
         }
@@ -496,22 +496,7 @@ async fn endpoint_hooks_patch_input_and_project_the_final_response<B: Backend>(
     ))
     .await?;
     assert!(expired.decode()?.is_none());
-    let jwt = expired
-        .headers()
-        .get("set-auth-jwt")
-        .expect("expired lookup remains visible to completed hooks");
-    let verified = Box::pin(auth.dispatch_endpoint(
-        JwtPlugin::verify_endpoint(jwt.clone(), None),
-        EndpointOptions::default(),
-    ))
-    .await?
-    .decode()?
-    .payload
-    .unwrap();
-    assert_eq!(
-        verified.get("sub").and_then(Value::as_str),
-        Some(user_id.as_str())
-    );
+    assert!(expired.headers().get("set-auth-jwt").is_none());
     assert!(auth.store().get_session(&token).await?.is_none());
     let foreign_session = auth.store().get_session(&foreign_token).await?.unwrap();
     assert_eq!(foreign_session.user_id(), foreign_user.id());

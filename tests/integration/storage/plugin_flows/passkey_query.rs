@@ -95,7 +95,7 @@ async fn passkey_generation_queries_match_actual_endpoint_and_stored_context() {
         "../../../../crates/plugins/src/passkey/generation_query_cases.json"
     ))
     .unwrap();
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 13);
     for case in cases {

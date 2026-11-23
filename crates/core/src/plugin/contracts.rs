@@ -123,6 +123,13 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         vec!["application/json"]
     }
 
+    /// Whether dispatch reads the request body of `route`. A route that returns
+    /// `false` receives no body and skips the media type check, as an upstream
+    /// endpoint declared with `disableBody` does.
+    fn parses_body(&self, _route: &AuthRoute) -> bool {
+        true
+    }
+
     /// Protocol callback prefixes whose verified state replaces browser origin admission.
     fn origin_check_skip_paths(&self) -> Vec<&'static str> {
         Vec::new()

@@ -151,24 +151,34 @@ impl OAuthProviderPlugin {
                 .get("redirect_uri")
                 .and_then(Value::as_str)
                 .unwrap_or("");
-            let state = query.get("state").and_then(Value::as_str);
-            let issuer = self
-                .metadata(ctx)?
-                .get("issuer")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_owned();
-            let mut pairs = url::form_urlencoded::Serializer::new(String::new());
-            _ = pairs
-                .append_pair("error", "access_denied")
-                .append_pair("error_description", "User denied access");
-            if let Some(state) = state {
-                _ = pairs.append_pair("state", state);
-            }
-            _ = pairs.append_pair("iss", &issuer);
-            return EndpointResponse::json(
-                &json!({"redirect":true,"url":format!("{redirect}{}{}",if redirect.contains('?'){"&"}else{"?"},pairs.finish())}),
-            );
+            let client = super::discovery::resolve(ctx, &client_id).await.unwrap_or(None);
+            let trusted = if let Some(client) = client.filter(|client| {
+                client.metadata.get("disabled") != Some(&Value::Bool(true))
+            }) {
+                self.authorization_redirect_is_trusted(&client.metadata, redirect)
+                    .await.unwrap_or(false)
+            } else {
+                false
+            };
+            let url = if trusted {
+                let metadata = self.metadata(ctx)?;
+                super::authorization::error_url(
+                    redirect,
+                    "access_denied",
+                    "User denied access",
+                    query.get("state").and_then(Value::as_str),
+                    metadata.get("issuer").and_then(Value::as_str),
+                )?
+            } else {
+                super::authorization::error_url(
+                    &super::authorization::server_error_page(ctx),
+                    "access_denied",
+                    "User denied access",
+                    None,
+                    None,
+                )?
+            };
+            return EndpointResponse::json(&json!({"redirect":true,"url":url}));
         }
         let prompt = query
             .get("prompt")
@@ -287,17 +297,8 @@ impl OAuthProviderPlugin {
         post_login_cleared_for_session: Option<String>,
         post_login_continuation: bool,
     ) -> AuthResult<EndpointResponse> {
-        let Some(mut request) = req.physical_request().cloned() else {
-            return super::clients::status_protocol_error(
-                401,
-                "invalid_request",
-                "request not found",
-            );
-        };
-        request.headers = req.session_headers().clone();
-        _ = request
-            .headers
-            .insert("accept".into(), "application/json".into());
+        let mut headers = req.session_headers().clone();
+        _ = headers.insert("accept".into(), "application/json".into());
         let input = Some(alibi_core::utils::json::parse_value(
             &serde_json::to_string(&query)?,
         )?);
@@ -310,9 +311,17 @@ impl OAuthProviderPlugin {
         // the continuation's logical response negotiation/session credentials.
         if let Some(call) = req.endpoint_call() {
             let mut call = call.clone();
-            call.replace_headers(request.headers);
+            call.replace_headers(headers);
             return Box::pin(self.authorize_flow(input, &call, ctx, settings)).await;
         }
+        let Some(mut request) = req.physical_request().cloned() else {
+            return super::clients::status_protocol_error(
+                401,
+                "invalid_request",
+                "request not found",
+            );
+        };
+        request.headers = headers;
         Box::pin(self.authorize_flow(input, &request, ctx, settings)).await
     }
 }

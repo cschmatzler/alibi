@@ -1310,6 +1310,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     });
+  let defaultAuth: ReturnType<typeof betterAuth<typeof options>> | undefined;
   const auths = {
     "logout-context": logoutProfile(false, false),
     "logout-context-background": logoutProfile(true, false),
@@ -1460,7 +1461,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
-    default: betterAuth(options),
+    get default() {
+      return (defaultAuth ??= betterAuth(options));
+    },
     retirement: betterAuth({
       ...options,
       databaseHooks: retirementHooks,
@@ -2250,7 +2253,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ]),
     ),
   };
-  return async (request: Request) => {
+  const handle = async (request: Request) => {
     if (
       new URL(request.url).pathname.startsWith("/__test/profiles/oauth-response-fields/api/auth/")
     ) {
@@ -3641,5 +3644,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       }
       throw error;
     }
+  };
+  return {
+    handle,
+    reset() {
+      // Better Auth #12578 caches local JWKS by adapter. Clearing the table
+      // between scenarios also requires a fresh adapter for the default auth.
+      defaultAuth = undefined;
+    },
   };
 }

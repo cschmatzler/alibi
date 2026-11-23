@@ -95,7 +95,7 @@ async fn mysql_api_key_usage_matches_actual_server_endpoint() -> TestResult {
     let id = created.api_key.id;
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/mysql-api-key-usage.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 3);
     for case in cases {

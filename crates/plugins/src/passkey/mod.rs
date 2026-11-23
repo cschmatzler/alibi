@@ -468,20 +468,6 @@ alibi_core::impl_auth_plugin! {
     }
 
  extra {
-    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
-        if self.config.origin.is_empty() && self.config.origins.is_empty() && !self.config.rp_id.is_empty()
-            && let Some(dynamic) = &ctx.config.dynamic_base_url
-            && dynamic.allowed_hosts.iter().any(|pattern| {
-                let host = pattern.split_once("://").map_or(pattern.as_str(), |(_, host)| host).split([':', '/']).next().unwrap_or_default();
-                let Some(wildcard) = host.rfind(['*', '?']) else { return false; };
-                let suffix = host.get(wildcard + 1..).unwrap_or_default().trim_start_matches('.');
-                suffix.is_empty() || suffix == self.config.rp_id || suffix.ends_with(&format!(".{}", self.config.rp_id)) || self.config.rp_id.ends_with(&format!(".{suffix}"))
-            })
-        {
-            return Err(AuthError::config(format!("Passkey `origin` must be set when a wildcard in `baseURL.allowedHosts` covers the passkey `rpID` \"{}\".", self.config.rp_id)));
-        }
-        Ok(())
-    }
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }
@@ -511,7 +497,7 @@ mod canonical_input_tests {
 
     fn assert_source_inputs(operation: &str, expected_cases: usize) {
         let fixture = json::parse_value(include_str!("canonical_input_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_auth"], "1.7.27");
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 36);
         let operation_id = if operation == "registration" {

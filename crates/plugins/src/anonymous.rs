@@ -99,6 +99,7 @@ impl AnonymousPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
+        check_sign_in_origin(req, ctx)?;
         self.sign_in_core(req, ctx).await
     }
 
@@ -291,6 +292,16 @@ impl AnonymousPlugin {
     }
 }
 
+/// Anonymous sign-in creates a session, so it validates the request origin
+/// with the same first-login CSRF check as the other sign-in endpoints.
+fn check_sign_in_origin<S: AuthSchema>(req: &AuthRequest, ctx: &AuthContext<S>) -> AuthResult<()> {
+    alibi_core::middleware::CsrfMiddleware::new(
+        alibi_core::middleware::CsrfConfig::new(),
+        std::sync::Arc::clone(&ctx.config),
+    )
+    .check_login_origin(req)
+}
+
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
     route_openapi_metadata!(S);
@@ -323,6 +334,9 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         let output = if call.operation_id() == "deleteAnonymousUser" {
             self.delete_core(call, ctx).await?
         } else {
+            if let Some(request) = call.request() {
+                check_sign_in_origin(request, ctx)?;
+            }
             self.sign_in_core(call, ctx).await?
         };
         crate::endpoint::from_auth_response(output)

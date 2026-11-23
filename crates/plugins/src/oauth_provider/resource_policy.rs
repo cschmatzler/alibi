@@ -97,11 +97,7 @@ impl OAuthProviderPlugin {
                 signing_key_id: None,
             });
         }
-        let userinfo = format!(
-            "{}{}/oauth2/userinfo",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path
-        );
+        let userinfo = super::endpoint_url(ctx, "/oauth2/userinfo");
         let mut rows = Vec::new();
         for resource in &audiences {
             if resource == &userinfo {

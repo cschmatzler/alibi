@@ -49,6 +49,6 @@ try {
     assert.equal(rows.length, 1);
     cases.push({ change_token: changeToken, token, input, callback_result: callbackResult, events: [...events], returned_token: session.token, expiresAt: session.expiresAt, old_exists: old !== null, new_exists: updated !== null, rows });
   }
-  await writeFile(new URL("../../fixtures/session-token-timestamp-mysql.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backend: "mysql", mysql: mysql.mysqlVersion, mysql2: mysql.mysql2Version, schema_sql: schemaSql, cases }) + "\n");
+  await writeFile(new URL("../../fixtures/session-token-timestamp-mysql.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", backend: "mysql", mysql: mysql.mysqlVersion, mysql2: mysql.mysql2Version, schema_sql: schemaSql, cases }) + "\n");
   console.log("Two actual MySQL session token/timestamp update cases");
 } finally { await mysql.close(); }

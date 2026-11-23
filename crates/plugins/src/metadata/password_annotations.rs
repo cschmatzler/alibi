@@ -40,6 +40,7 @@ pub(super) fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
         "/reset-password" => {
             metadata.operation_id = Some("resetPassword".into());
             metadata.description = Some("Reset the password for a user".into());
+            metadata.parameters.push(json!({"name":"token","in":"query","schema":{"type":"string"}}));
             metadata.request_body = Some(body(
                 &(json!({"type":"object","properties":{"newPassword":{"type":"string","description":"The new password to set"},"token":{"type":"string","description":"The token to reset the password"}},"required":["newPassword"]})),
             ));

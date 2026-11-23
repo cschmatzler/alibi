@@ -21,6 +21,7 @@ pub(super) fn grant_with_verified(
         verified,
         true,
         "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+        |xml| xml,
     )
 }
 pub(super) fn unsolicited_grant(
@@ -35,6 +36,7 @@ pub(super) fn unsolicited_grant(
         None,
         false,
         "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+        |xml| xml,
     )
 }
 pub(super) fn unsupported_signature_grant(
@@ -49,6 +51,22 @@ pub(super) fn unsupported_signature_grant(
         None,
         true,
         "http://www.w3.org/2001/04/xmldsig-more#rsa-md5",
+        |xml| xml,
+    )
+}
+pub(super) fn custom_grant(
+    authorization: &str,
+    email: &str,
+    customize: impl FnOnce(String) -> String,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    grant_with_correlation(
+        authorization,
+        email,
+        false,
+        None,
+        true,
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+        customize,
     )
 }
 fn grant_with_correlation(
@@ -58,6 +76,7 @@ fn grant_with_correlation(
     verified: Option<&[&str]>,
     correlated: bool,
     signature_algorithm: &str,
+    customize: impl FnOnce(String) -> String,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let url = url::Url::parse(authorization)?;
     let query = url
@@ -121,7 +140,7 @@ fn grant_with_correlation(
     } else {
         xml.replace(&format!(" InResponseTo=\"{request_id}\""), "")
     };
-    let signed = sign_xml(&xml, wrong_key)?;
+    let signed = sign_xml(&customize(xml), wrong_key)?;
     Ok(
         serde_json::json!({"SAMLResponse":base64::engine::general_purpose::STANDARD.encode(signed),"RelayState":query["RelayState"],"assertionId":assertion_id,"requestId":request_id}),
     )

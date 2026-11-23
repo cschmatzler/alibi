@@ -72,7 +72,7 @@ export async function scimFixture(base: BetterAuthOptions) {
   const verifierInputs: unknown[] = [];
   let verifierClaims: any = undefined;
   let userReadAttributes = "";
-  return async (request: Request): Promise<Response | undefined> => {
+  const handle = async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
@@ -1457,4 +1457,5 @@ export async function scimFixture(base: BetterAuthOptions) {
       );
     }
   };
+  return { handle, close: () => options.database.close() };
 }

@@ -397,14 +397,14 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
         verified.replay_key,
         URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input))
     );
-    assert_eq!(verified.expires_at.unwrap().timestamp(), 2000000300);
+    assert_eq!(verified.expires_at.unwrap().timestamp(), 2000000301);
     let row = auth
         .store()
         .get_verification_by_identifier(&format!("dpop-proof:{}", verified.replay_key))
         .await?
         .unwrap();
     assert_eq!(row.value(), verified.replay_key);
-    assert_eq!(row.expires_at().timestamp(), 2000000300);
+    assert_eq!(row.expires_at().timestamp(), 2000000301);
     let duplicate = verify_dpop_proof(&options).await.unwrap_err();
     assert_eq!(duplicate.code.as_deref(), Some("invalid_dpop_proof"));
     assert_eq!(duplicate.message, "DPoP proof jti has already been used");

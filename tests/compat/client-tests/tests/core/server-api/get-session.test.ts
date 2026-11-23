@@ -99,7 +99,7 @@ for (const compact of [false, true]) {
           await setTimeout(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
         }
         const observed = await invoke(ctx, profile, input);
-        if (observed.result.ok) {
+        if (observed.result.ok && observed.result.value.response !== null) {
           const verified = await jwtVerify(observed.result.value.headers["set-auth-jwt"], verifier);
           expect(verified.payload.iat!).toBeGreaterThan(previousSecond);
           previousSecond = verified.payload.iat!;
@@ -159,6 +159,7 @@ for (const compact of [false, true]) {
       });
       expect(expired.result.ok).toBe(true);
       expect(expired.result.value.response).toBeNull();
+      expect(expired.result.value.headers["set-auth-jwt"]).toBeUndefined();
       expect(
         expired.result.value.cookies.some(
           (cookie: string) =>
@@ -175,7 +176,7 @@ for (const compact of [false, true]) {
         expect(observed.events[0].request).toBeNull();
       }
       const jwtReceipts = [];
-      for (const observed of [valid, noRefresh, renewed, expired]) {
+      for (const observed of [valid, noRefresh, renewed]) {
         const token = observed.result.value.headers["set-auth-jwt"];
         expect(token).toBeTypeOf("string");
         expect(

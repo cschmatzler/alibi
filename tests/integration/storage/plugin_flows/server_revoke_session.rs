@@ -125,7 +125,9 @@ async fn server_revoke_session_preserves_foreign_authority_and_rejects_revoked_c
         .dispatch_endpoint(revoke_endpoint(&owner_token)?, options(&owner))
         .await?;
     assert!(self_revoke.decode()?.status);
-    assert!(self_revoke.headers().get_all("set-cookie").next().is_none());
+    assert!(self_revoke.headers().get_all("set-cookie").any(|cookie| {
+        cookie.starts_with("better-auth.session_token=;") && cookie.contains("Max-Age=0")
+    }));
     assert!(auth.store().get_session(&owner_token).await?.is_none());
     let after = db.tables(&["user", "account", "session"]).await?;
     let stale = auth

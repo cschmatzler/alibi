@@ -79,7 +79,9 @@ compatScenario(
     expect(await state()).toEqual(current);
     const selfRevoke = await invoke({ token: owner.result.data!.token }, owner.headers);
     expect(selfRevoke.result.value!.response).toEqual({ status: true });
-    expect(selfRevoke.result.value!.headers["set-cookie"]).toBeUndefined();
+    expect(selfRevoke.result.value!.headers["set-cookie"]).toMatch(
+      /better-auth[.]session_token=;[^,]*Max-Age=0/,
+    );
     const final = await state();
     expect(final.owner.sessions).toEqual([]);
     expect(final.owner.user).toEqual(before.owner.user);

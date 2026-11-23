@@ -39,7 +39,7 @@ async fn check<B: Backend>(db: Db, operation: &str, clocks: ClockFixture) -> Tes
             "../../../fixtures/session-timestamp-hooks-secondary-wire-zero-created-at.json"
         ),
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if db.is_postgres() {
         "postgres"
     } else {

@@ -4,6 +4,7 @@ use super::{
     SsoPlugin, SsoProvider, Value, api, json,
 };
 use alibi_core::OAuthStateStrategy;
+use alibi_core::session::SessionRequest;
 use base64::Engine as _;
 use sha2::Digest as _;
 impl SsoPlugin {
@@ -13,6 +14,7 @@ impl SsoPlugin {
     pub(super) async fn sign_in<S: AuthSchema>(
         &self,
         input: &JsValue,
+        request: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let body = input.to_json_value()?;
@@ -133,9 +135,24 @@ impl SsoPlugin {
             body.get("requestSignUp").and_then(Value::as_bool),
             serde_json::Map::new(),
         );
-        payload.server_context = Some(
-            json!({"ssoProviderReference":provider_reference(&provider,self.config.domain_verification)?}),
+        let mut server_context = serde_json::Map::new();
+        _ = server_context.insert(
+            "ssoProviderReference".into(),
+            provider_reference(&provider, self.config.domain_verification)?,
         );
+        if let Some(query) =
+            crate::oauth_provider::interaction::admitted_query(request.extensions())
+        {
+            _ = server_context.insert("oauthProviderInteraction".into(), json!(query));
+            crate::oauth::state::sign_server_context(
+                &mut payload,
+                Value::Object(server_context),
+                &state,
+                ctx.config.current_secret(),
+            )?;
+        } else {
+            payload.server_context = Some(Value::Object(server_context));
+        }
         _ = payload
             .additional_data
             .insert("oauthState".into(), json!(state));

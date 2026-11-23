@@ -3,7 +3,7 @@ use super::OAuthProviderPlugin;
 use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
 use alibi_core::store::{OAuthToken, OAuthTokenKind};
-use alibi_core::{AuthContext, AuthResult, AuthSchema};
+use alibi_core::{AuthContext, AuthResult, AuthSchema, AuthSession};
 use serde_json::{Value, json};
 impl OAuthProviderPlugin {
     pub(super) async fn refresh_grant<S: AuthSchema>(
@@ -109,6 +109,13 @@ impl OAuthProviderPlugin {
                 "invalid_scope",
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
+        }
+        // A session-bound refresh token is never rotated, so presenting one
+        // that was retired with its session is not replay and must not tear
+        // down the client's other grants.
+        let active_session = Box::pin(active_session_id(ctx, &original)).await?;
+        if active_session.is_none() && is_session_bound(&original, &original_scopes) {
+            return error("invalid_grant", "invalid refresh token");
         }
         if original
             .metadata
@@ -237,10 +244,16 @@ impl OAuthProviderPlugin {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>();
+        // Dropping `offline_access` after the session ended would ask for a
+        // session-bound grant that can no longer start. Refuse before rotation
+        // so the presented token stays usable.
+        if active_session.is_none() && is_session_bound(&original, &scopes) {
+            return error("invalid_grant", "invalid refresh token");
+        }
         let mut params =
             super::OAuthTokenIssueParams::new(client.clone(), admission.scopes.clone());
         params.user = Some(ctx.trusted_user_view(&user)?);
-        params.session_id = original.session_id.clone();
+        params.session_id = active_session.clone();
         params.refresh_token = Some(original.clone());
         params.auth_time = original
             .metadata
@@ -316,7 +329,7 @@ impl OAuthProviderPlugin {
                 issued,
                 expires: &expires_claim,
                 policy: &admission,
-                refresh_id: next_refresh.as_ref().map(|(id, _)| id.as_str()),
+                refresh: next_refresh.as_ref(),
             },
         ))
         .await
@@ -335,11 +348,11 @@ impl OAuthProviderPlugin {
             &access,
             issued.timestamp(),
             expires_claim,
-            next_refresh.map(|(_, token)| token),
+            next_refresh.map(|refresh| refresh.token),
         )?;
         if scopes.contains(&"openid") {
             let auth_time = params.auth_time.map(|value| value.timestamp_millis());
-            let proof = json!({"userId":user_id,"sessionId":original.session_id,"authTime":auth_time,"query":{},"idTokenClaims":params.id_token_claims});
+            let proof = json!({"userId":user_id,"sessionId":active_session,"authTime":auth_time,"query":{},"idTokenClaims":params.id_token_claims});
             match Box::pin(self.issue_id_token(&params, "refresh_token", &proof, &access, req, ctx))
                 .await?
             {
@@ -391,6 +404,31 @@ impl OAuthProviderPlugin {
             }
         }
     }
+}
+/// The session a token row was issued in, while that session is still active.
+/// Refresh tokens outlive their session, so tokens they mint must not name one
+/// that has ended.
+pub(super) async fn active_session_id<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    row: &OAuthToken,
+) -> AuthResult<Option<String>> {
+    let Some(id) = row.session_id.as_deref() else {
+        return Ok(None);
+    };
+    Ok(ctx.database.get_session_by_id(id).await?
+        .filter(|session| session.expires_at() >= chrono::Utc::now())
+        .map(|_| id.to_owned()))
+}
+/// Without `offline_access`, a grant issued in a session ends with it (OIDC
+/// Back-Channel Logout §2.7). A code-issued row without a session lost it to
+/// the foreign key when the session was deleted; device-code rows never had one.
+pub(super) fn is_session_bound(row: &OAuthToken, scopes: &[&str]) -> bool {
+    !scopes.contains(&"offline_access")
+        && (row.session_id.as_deref().is_some_and(|id| !id.is_empty())
+            || row
+                .authorization_code_id
+                .as_deref()
+                .is_some_and(|id| !id.is_empty()))
 }
 fn no_store(response: EndpointResponse) -> EndpointResponse {
     response

@@ -219,9 +219,26 @@ impl JwtPlugin {
                 // keyring can observe it or return a changed key set.
                 let mut fallback = self.keys_in_transaction(request, ctx, transaction).await?;
                 fallback.sort_by_key(|key| std::cmp::Reverse(key.created_at));
+                // A key lazy-minted for a pinned additional algorithm must not
+                // stand in for the primary key, or the first pinned call on an
+                // empty JWKS moves every unpinned token onto that algorithm. An
+                // application keyring is operator-managed and may never return
+                // a minted key, so it keeps reusing its newest key.
+                let minted_for_pinning = |key: &Jwk| {
+                    self.config.keyring.is_none()
+                        && key.alg.as_deref().is_some_and(|alg| {
+                            alg != primary.as_str()
+                                && self
+                                    .config
+                                    .additional_key_pairs
+                                    .iter()
+                                    .any(|config| config.algorithm.as_str() == alg)
+                        })
+                };
                 if let Some(key) = fallback
                     .into_iter()
                     .find(|key| key.expires_at.is_none_or(|expiry| expiry > Utc::now()))
+                    .filter(|key| !minted_for_pinning(key))
                 {
                     key
                 } else {

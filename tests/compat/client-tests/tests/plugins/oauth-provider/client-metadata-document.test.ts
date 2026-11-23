@@ -254,10 +254,10 @@ compatScenario(
     expect(stored.enableEndSession).toBe(false);
     expect(stored.clientCredentialsScopes).toEqual(["operator-scope"]);
     expect(stored.applicationType).toBeNull();
-    // Adapter update filtering retains undefined metadata fields; do not assume deletion.
-    expect(stored.name).toBe("Remote");
-    expect(stored.icon).toBe(initial.icon);
-    expect(stored.jwksUri).toBe(initial.jwksUri);
+    // Better Auth #12821 clears omitted document-owned fields on refresh.
+    expect(stored.name).toBeNull();
+    expect(stored.icon).toBeNull();
+    expect(stored.jwksUri).toBeNull();
     expect(stored.requirePKCE).toBe(true);
     expect(stored.metadata).toEqual({ final: [1, null, true] });
     const additive = await links();

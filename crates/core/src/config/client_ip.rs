@@ -57,7 +57,7 @@ impl IpAddressConfig {
 
 struct Address {
     bytes: Vec<u8>,
-    ipv6_groups: Option<Vec<String>>,
+    ipv6_groups: Option<[u16; 8]>,
 }
 
 impl Address {
@@ -79,14 +79,10 @@ impl Address {
                         ipv6_groups: None,
                     });
                 }
-                let groups = expand_ipv6(value);
-                let bytes = groups
-                    .iter()
-                    .flat_map(|group| segment(group).to_be_bytes())
-                    .collect();
+                // The parsed segments include both halves of any dotted tail.
                 Some(Self {
-                    bytes,
-                    ipv6_groups: Some(groups),
+                    bytes: ip.octets().to_vec(),
+                    ipv6_groups: Some(ip.segments()),
                 })
             }
         }
@@ -101,10 +97,11 @@ impl Address {
                 .collect::<Vec<_>>()
                 .join(".");
         };
-        if prefix.is_nan() || prefix >= 128.0 {
-            return groups.join(":").to_lowercase();
-        }
-        let mut bits = prefix.floor().max(0.0);
+        let mut bits = if prefix.is_nan() {
+            128.0
+        } else {
+            prefix.floor().clamp(0.0, 128.0)
+        };
         groups
             .into_iter()
             .map(|group| {
@@ -112,41 +109,11 @@ impl Address {
                     .filter(|bit| f64::from(*bit) < bits)
                     .fold(0_u16, |mask, bit| mask | (1 << (15 - bit)));
                 bits -= 16.0;
-                if retained == u16::MAX {
-                    group.to_lowercase()
-                } else {
-                    format!("{:04x}", segment(&group) & retained)
-                }
+                format!("{:04x}", group & retained)
             })
             .collect::<Vec<_>>()
             .join(":")
     }
-}
-
-fn expand_ipv6(value: &str) -> Vec<String> {
-    let raw = if let Some((left, right)) = value.split_once("::") {
-        let mut left = left
-            .split(':')
-            .filter(|group| !group.is_empty())
-            .collect::<Vec<_>>();
-        let right = right
-            .split(':')
-            .filter(|group| !group.is_empty())
-            .collect::<Vec<_>>();
-        left.extend(std::iter::repeat_n("0", 8 - left.len() - right.len()));
-        left.extend(right);
-        left
-    } else {
-        value.split(':').collect()
-    };
-    raw.into_iter()
-        .map(|group| format!("{group:0>4}"))
-        .collect()
-}
-
-fn segment(group: &str) -> u16 {
-    let prefix = group.split_once('.').map_or(group, |(first, _)| first);
-    u16::from_str_radix(prefix, 16).unwrap_or_default()
 }
 
 struct Network {
@@ -271,6 +238,45 @@ mod tests {
             config.resolve_ip(&headers).as_deref(),
             Some("2001:0db8:abcd:0012:0000:0000:0000:0000")
         );
+    }
+
+    #[test]
+    fn dotted_ipv4_tails_expand_into_two_hex_groups() {
+        let config = IpAddressConfig {
+            ipv6_subnet: 128.0,
+            localhost_fallback: false,
+            ..Default::default()
+        };
+        for (address, expected) in [
+            // Not IPv4-mapped: the dotted tail follows a non-mapped prefix.
+            (
+                "::ffff:808:127.0.0.1",
+                "0000:0000:0000:0000:ffff:0808:7f00:0001",
+            ),
+            (
+                "::ffff:808:7f00:1",
+                "0000:0000:0000:0000:ffff:0808:7f00:0001",
+            ),
+            (
+                "64:ff9b::192.0.2.33",
+                "0064:ff9b:0000:0000:0000:0000:c000:0221",
+            ),
+            ("::ffff:192.0.2.1", "192.0.2.1"),
+        ] {
+            let headers = HashMap::from([("x-forwarded-for".into(), address.into())]);
+            assert_eq!(config.resolve_ip(&headers).as_deref(), Some(expected), "{address}");
+        }
+        // CIDR matching reads the expanded groups too.
+        let config = IpAddressConfig {
+            trusted_proxies: vec!["64:ff9b::c000:200/120".into()],
+            localhost_fallback: false,
+            ..Default::default()
+        };
+        let headers = HashMap::from([(
+            "x-forwarded-for".into(),
+            "198.51.100.7, 64:ff9b::192.0.2.33".into(),
+        )]);
+        assert_eq!(config.resolve_ip(&headers).as_deref(), Some("198.51.100.7"));
     }
 }
 // LCOV_EXCL_STOP

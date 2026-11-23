@@ -4,8 +4,8 @@ import { getBody } from "../reference-server/node_modules/better-call/dist/utils
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/better-call/package.json", import.meta.url)));
 const auth = JSON.parse(await readFile(new URL("../reference-server/node_modules/better-auth/package.json", import.meta.url)));
-assert.equal(auth.version, "1.7.18");
-assert.equal(pkg.version, "1.4.5");
+assert.equal(auth.version, "1.7.27");
+assert.equal(pkg.version, "1.4.6");
 const inputs = [
   ["json-utf16", "application/json", Buffer.from('{"\\ud800":"\\udfff","name":"\\ud800"}')],
   ["json-prototype-key", "application/json", Buffer.from('{"__proto__":"kept","constructor":"kept"}')],

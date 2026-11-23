@@ -80,6 +80,18 @@ pub struct ScimManagedConnectionEvent {
     pub credential_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+/// One page of connection events ordered by `sequence`.
+#[derive(Clone, Copy, Debug)]
+pub struct ScimManagedConnectionEventQuery {
+    pub limit: i64,
+    pub offset: i64,
+    pub descending: bool,
+}
+/// Requested events plus the count of every event recorded for the connection.
+pub struct ScimManagedConnectionEventPage {
+    pub events: Vec<ScimManagedConnectionEvent>,
+    pub total: i64,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScimConnectionBinding {
@@ -229,6 +241,11 @@ pub struct ScimGroupMemberships {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    /// Whether this store can run SCIM provisioning and connection changes atomically.
+    fn supports_scim_transactions(&self) -> bool {
+        false
+    }
+
     async fn find_scim_identity_tombstone(
         &self,
         _connection: &str,
@@ -388,10 +405,9 @@ pub trait ScimManagedStore: Send + Sync {
         &self,
         _id: &str,
         _domain: &str,
-    ) -> AuthResult<Option<Vec<ScimManagedConnectionEvent>>> {
-        Err(AuthError::config(
-            "Managed SCIM persistence is not supported by this store",
-        ))
+        _page: ScimManagedConnectionEventQuery,
+    ) -> AuthResult<Option<ScimManagedConnectionEventPage>> {
+        Ok(None)
     }
 
     async fn revoke_scim_managed_credential(
@@ -417,18 +433,14 @@ pub trait ScimManagedStore: Send + Sync {
         _id: &str,
         _domain: &str,
     ) -> AuthResult<Option<ScimManagedConnectionState>> {
-        Err(AuthError::config(
-            "Managed SCIM persistence is not supported by this store",
-        ))
+        Ok(None)
     }
 
     async fn list_scim_managed_connections(
         &self,
         _domain: &str,
     ) -> AuthResult<Vec<ScimManagedConnection>> {
-        Err(AuthError::config(
-            "Managed SCIM persistence is not supported by this store",
-        ))
+        Ok(Vec::new())
     }
 
     /// Insert one connection, its credential, and both ordered events in one transaction.

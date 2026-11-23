@@ -30,8 +30,16 @@ compatScenario("SCIM managed event history is ordered, domain scoped and bounded
     expect(response.status).toBe(200);
   };
   await revoke(kid);
-  const list = (id: string, domain: string) =>
-    control("listSCIMManagedConnectionEvents", { connectionId: id, provisioningDomainId: domain });
+  const list = (
+    id: string,
+    domain: string,
+    page?: { limit?: number; offset?: number; sortDirection?: "asc" | "desc" },
+  ) =>
+    control("listSCIMManagedConnectionEvents", {
+      connectionId: id,
+      provisioningDomainId: domain,
+      ...page,
+    });
   const storage = async () =>
     await (
       await actor.fetch(`${ctx.baseURL}/__test/server-api/scim?operation=managed-storage`, {
@@ -44,6 +52,7 @@ compatScenario("SCIM managed event history is ordered, domain scoped and bounded
   const historyResponse = await list(cid, "  tenant-a  ");
   expect(historyResponse.status).toBe(200);
   const history = (await historyResponse.json()) as any;
+  expect(history).toMatchObject({ limit: 100, offset: 0, total: 3 });
   expect(history.events).toHaveLength(3);
   for (const [index, [type, actorId, credentialId]] of [
     ["connection.created", "creator", null],
@@ -86,10 +95,23 @@ compatScenario("SCIM managed event history is ordered, domain scoped and bounded
     await revoke(rotated.credential.credentialId);
   }
   const limited = (await (await list(cid, "tenant-a")).json()) as any;
+  expect(limited).toMatchObject({ limit: 100, offset: 0, total: 105 });
   expect(limited.events).toHaveLength(100);
   expect(limited.events.map((event: any) => event.sequence)).toEqual(
     Array.from({ length: 100 }, (_, index) => index + 6),
   );
+  for (const [page, sequence] of [
+    [{ limit: 2, offset: 1, sortDirection: "asc" }, [2, 3]],
+    [{ limit: 2, offset: 1, sortDirection: "desc" }, [104, 103]],
+    [{ limit: 2, offset: 1 }, [103, 104]],
+    [{ limit: 2, offset: 200 }, []],
+  ] as const) {
+    const response = await list(cid, "tenant-a", page);
+    expect(response.status).toBe(200);
+    const result = (await response.json()) as any;
+    expect(result).toMatchObject({ limit: 2, offset: page.offset, total: 105 });
+    expect(result.events.map((event: any) => event.sequence)).toEqual(sequence);
+  }
   return {
     initial: history.events.map((event: any) => ({ sequence: event.sequence, type: event.type })),
     sequences: limited.events.map((event: any) => event.sequence),

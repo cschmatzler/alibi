@@ -1,6 +1,6 @@
-//! Source-backed Better Auth 1.7.18 declarations.
+//! Source-backed Better Auth 1.7.27 declarations.
 //! Author-time port: tests/compat/reference-server/port-openapi-annotations.ts.
-//! Conversion helpers SHA256: 20d143dcbb3b0ee2fe9e7a1d4fbf93eae438fb2e4e388c3994df7a6284fe1ac0.
+//! Conversion helpers SHA256: 36b3d1d064b4e26f8ac7cc212bb9fb839f5ef7ff5ca7caba39317b11727e6cfe.
 //! No generated document or fixture response was captured.
 use super::{OpenApiField, OpenApiModel};
 use serde_json::json;

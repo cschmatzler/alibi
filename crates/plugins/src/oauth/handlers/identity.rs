@@ -266,11 +266,39 @@ pub(crate) async fn process_oauth_sign_in(
     .await
 }
 
+pub(crate) async fn process_oauth_sign_in_with_output(
+    identity: OAuthIdentity<'_>,
+    policy: &OAuthProcessPolicy,
+    tokens: &OAuthTokenSet,
+    disable_sign_up: bool,
+    meta: &alibi_core::RequestMeta,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    raw: (
+        Option<&alibi_core::utils::json::JsObject>,
+        Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
+    ),
+) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    process_oauth_sign_in_with_account_fields(
+        identity,
+        policy,
+        tokens,
+        disable_sign_up,
+        meta,
+        ctx,
+        raw,
+        None,
+    )
+    .await
+}
+
+/// `account_fields` are the provider's resolved `getAccountFields` values.
+/// Alibi's own account columns always take precedence over them.
 #[expect(
     clippy::too_many_lines,
+    clippy::too_many_arguments,
     reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
 )]
-pub(crate) async fn process_oauth_sign_in_with_output(
+pub(crate) async fn process_oauth_sign_in_with_account_fields(
     identity: OAuthIdentity<'_>,
     policy: &OAuthProcessPolicy,
     tokens: &OAuthTokenSet,
@@ -281,6 +309,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         Option<&alibi_core::utils::json::JsObject>,
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
+    account_fields: Option<&alibi_core::field_policy::FieldValues>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let normalized_verification = raw_output
         .and_then(|output| output.get("emailVerified"))
@@ -335,6 +364,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                 .update_account_record(
                     &existing_account.id(),
                     UpdateAccount {
+                        additional_fields: account_fields.cloned().unwrap_or_default(),
                         provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                         access_token: token_bundle.access_token.clone(),
                         refresh_token: token_bundle.refresh_token.clone(),
@@ -452,7 +482,8 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                     created_at: Some(existing_account.created_at()),
                     updated_at: Some(existing_account.updated_at()),
                     ..AccountCookiePayload::from_account(&existing_account)?
-                })
+                }
+                .with_account_fields(account_fields))
             })
             .transpose()
             .map_err(|error| error.to_string())?;
@@ -510,13 +541,16 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         .await?;
         let created_account = ctx
             .database
-            .create_account_record(provider_account(
-                linked_user.id().to_string(),
-                user_info.id.clone(),
-                provider_name.to_owned(),
-                token_bundle,
-                tokens,
-            ))
+            .create_account_record(alibi_core::CreateAccount {
+                additional_fields: account_fields.cloned().unwrap_or_default(),
+                ..provider_account(
+                    linked_user.id().to_string(),
+                    user_info.id.clone(),
+                    provider_name.to_owned(),
+                    token_bundle,
+                    tokens,
+                )
+            })
             .await
             .map_err(|_error| "unable to link account".to_owned())?;
 
@@ -654,6 +688,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             token_bundle,
             tokens,
         );
+        create_account.additional_fields = account_fields.cloned().unwrap_or_default();
         let source = identity_source(
             provider_name,
             profile,
@@ -675,7 +710,9 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             })
             .await
             .map_err(|error| {
-                if error.status_code() == 403 {
+                if error.status_code() == 403
+                    && !matches!(error, AuthError::UserCreationCancelled)
+                {
                     OAuthSignInError::from_identity_denial(&error)
                 } else {
                     OAuthSignInError::Generic("unable to create user".to_owned())

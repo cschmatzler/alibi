@@ -60,7 +60,7 @@ async fn mysql_admin_pages_match_actual_numeric_queries_and_sql_errors() -> Test
         .await?;
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/mysql-admin-pages.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 13);
     let cookie = jar

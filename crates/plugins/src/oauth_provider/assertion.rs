@@ -10,6 +10,16 @@ use sha2::{Digest as _, Sha256};
 
 const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 const SIGNATURE_ERROR: &str = "client assertion signature verification failed";
+/// RFC 7519 §4.1.4 allows leeway "usually no more than a few minutes".
+const MAX_ASSERTION_CLOCK_TOLERANCE_SECONDS: f64 = 60.0;
+/// Configured skew, with negative and non-finite values treated as zero.
+fn clock_tolerance(config: &super::OAuthProviderConfig) -> f64 {
+    let value = config.assertion_clock_tolerance;
+    if !value.is_finite() || value < 0.0 {
+        return 0.0;
+    }
+    value.min(MAX_ASSERTION_CLOCK_TOLERANCE_SECONDS)
+}
 fn denied<T>(status: u16, description: &str) -> AuthResult<Result<T, EndpointResponse>> {
     Ok(Err(super::clients::status_protocol_error(
         status,
@@ -31,6 +41,7 @@ pub(super) async fn verify<S: AuthSchema>(
     ctx: &AuthContext<S>,
     provider: &OAuthProviderPlugin,
     endpoint_url: &str,
+    request: Option<&alibi_core::AuthRequest>,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
     Ok(Box::pin(verify_client(
         body,
@@ -39,6 +50,7 @@ pub(super) async fn verify<S: AuthSchema>(
         endpoint_url,
         false,
         None,
+        request,
     ))
     .await?
     .map(|(credentials, _)| credentials))
@@ -53,7 +65,9 @@ pub(super) async fn verify_client<S: AuthSchema>(
     endpoint_url: &str,
     endpoint_only: bool,
     check: Option<ClientCheck>,
+    request: Option<&alibi_core::AuthRequest>,
 ) -> AuthResult<Result<(Credentials, OAuthClient), EndpointResponse>> {
+    let requested_sequence = provider.client_jwks.sequence()?;
     let assertion = body
         .get("client_assertion")
         .and_then(Value::as_str)
@@ -142,7 +156,7 @@ pub(super) async fn verify_client<S: AuthSchema>(
     if let Some((status, description)) = check.and_then(|check| check(provider, &client)) {
         return denied(status, description);
     }
-    let mut jwks = match super::client_jwks::get(ctx, provider, &client).await? {
+    let mut jwks = match super::client_jwks::get(ctx, provider, &client, request).await? {
         Ok(jwks) => jwks,
         Err(description) => return denied(400, description),
     };
@@ -158,13 +172,22 @@ pub(super) async fn verify_client<S: AuthSchema>(
     }
     let mut signature = signature_result(&header, &jwks, alg, assertion);
     if signature == SignatureResult::NoMatchingKey
-        && let Some(refreshed) = super::client_jwks::refetch(provider, &client).await?
+        && let Some(refreshed) = super::client_jwks::refetch(provider, &client, requested_sequence).await?
     {
         jwks = refreshed;
         signature = signature_result(&header, &jwks, alg, assertion);
     }
-    if signature != SignatureResult::Valid || !claims_valid(&payload, client_id, &audiences) {
-        return denied(401, SIGNATURE_ERROR);
+    if signature != SignatureResult::Valid
+        || !claims_valid(
+            &payload,
+            client_id,
+            &audiences,
+            clock_tolerance(&provider.config),
+        )
+    {
+        return Ok(Err(super::clients::with_basic_challenge(
+            super::clients::status_protocol_error(401, "invalid_client", SIGNATURE_ERROR)?,
+        )));
     }
     let expected_audience = audiences
         .iter()
@@ -219,7 +242,8 @@ pub async fn consume_client_assertion<S: AuthSchema>(
             "client assertion aud does not match the endpoint",
         ));
     }
-    if let Some(description) = lifetime_error(payload, config.assertion_max_lifetime) {
+    let tolerance = clock_tolerance(config);
+    if let Some(description) = lifetime_error(payload, config.assertion_max_lifetime, tolerance) {
         return Err(consumption_error(&description));
     }
     let exp = payload
@@ -239,7 +263,7 @@ pub async fn consume_client_assertion<S: AuthSchema>(
         clippy::cast_possible_truncation,
         reason = "ECMAScript Date truncates fractional milliseconds"
     )]
-    let expires_at = chrono::DateTime::from_timestamp_millis((exp * 1000.0).trunc() as i64)
+    let expires_at = chrono::DateTime::from_timestamp_millis(((exp + tolerance) * 1000.0).trunc() as i64)
         .ok_or_else(|| AuthError::internal("Invalid assertion expiration"))?;
     if !ctx
         .database
@@ -312,7 +336,7 @@ fn audience_contains(payload: &JsValue, expected: &str) -> bool {
             .and_then(JsValue::as_array)
             .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(expected)))
 }
-fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool {
+fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str], tolerance: f64) -> bool {
     if payload.get("iss").and_then(JsValue::as_str) != Some(client_id)
         || payload.get("sub").and_then(JsValue::as_str) != Some(client_id)
     {
@@ -327,7 +351,9 @@ fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool 
             let Some(number) = value.as_f64() else {
                 return false;
             };
-            if (name == "exp" && number <= now) || (name == "nbf" && number > now) {
+            if (name == "exp" && number <= now - tolerance)
+                || (name == "nbf" && number > now + tolerance)
+            {
                 return false;
             }
         }
@@ -341,16 +367,16 @@ fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool 
 fn current_seconds() -> f64 {
     chrono::Utc::now().timestamp() as f64
 }
-fn lifetime_error(payload: &JsValue, max: f64) -> Option<String> {
+fn lifetime_error(payload: &JsValue, max: f64, tolerance: f64) -> Option<String> {
     let Some(exp) = payload.get("exp").and_then(JsValue::as_f64) else {
         return Some("client assertion must include exp claim".into());
     };
     let now = current_seconds();
-    if exp <= now {
+    if exp <= now - tolerance {
         return Some("client assertion has expired".into());
     }
     let limit = || JsValue::Number(max).coerce_string().unwrap_or_default();
-    if exp - now > max {
+    if exp - now > max + tolerance {
         return Some(format!(
             "client assertion exp is too far in the future (max {}s)",
             limit()
@@ -359,7 +385,7 @@ fn lifetime_error(payload: &JsValue, max: f64) -> Option<String> {
     if payload
         .get("iat")
         .and_then(JsValue::as_f64)
-        .is_some_and(|iat| now - iat > max)
+        .is_some_and(|iat| now - iat > max + tolerance)
     {
         return Some(format!(
             "client assertion iat is too far in the past (max {}s)",

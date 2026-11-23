@@ -75,7 +75,7 @@ async fn builtin_creation_default_keeps_adapter_field_order<B: Backend>(db: Db) 
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../../fixtures/session-creation-clock-order.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if db.is_postgres() {
         "postgres"
     } else {

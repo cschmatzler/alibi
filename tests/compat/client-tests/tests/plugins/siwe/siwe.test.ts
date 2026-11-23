@@ -312,8 +312,8 @@ compatScenario(
     expect(failure.error).toMatchObject({
       status: 401,
       message: "Something went wrong. Please try again later.",
-      error: "deterministic ENS failure",
     });
+    expect(failure.error).not.toHaveProperty("error");
 
     const reservation = await state(ctx);
     expect(reservation.users).toEqual(collision.users);
@@ -438,9 +438,9 @@ compatScenario(
       } else if (mode === "throw") {
         expect(result.error).toMatchObject({
           status: 401,
-          error: "deterministic verifier failure",
           message: "Something went wrong. Please try again later.",
         });
+        expect(result.error).not.toHaveProperty("error");
       } else {
         expect(result.error).toMatchObject({
           status: 401,
@@ -711,11 +711,16 @@ compatScenario(
       );
     };
 
+    // 4a4830af2 adopts better-call 1.4.6, which matches the complete media
+    // type before parsing the body.
     for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
       for (const media of [
         "text/plain",
         "application/x-www-form-urlencoded",
         "application/problem+json",
+        "text/plainapplication/json",
+        "TEXT/PLAINapplication/json; charset=UTF-8",
+        "application/octet-streamapplication/json",
         "",
       ]) {
         const payload =
@@ -737,24 +742,6 @@ compatScenario(
         });
         expect(await state(ctx)).toEqual(before);
 
-        observations.push({ path, media, body });
-      }
-    }
-
-    for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
-      for (const media of [
-        "text/plainapplication/json",
-        "TEXT/PLAINapplication/json; charset=UTF-8",
-      ]) {
-        const response = await actor.fetch(`${ctx.baseURL}/api/auth${path}`, {
-          method: "POST",
-          body: JSON.stringify(
-            path.endsWith("verify") ? { message: signed, signature: signature(signed) } : {},
-          ),
-          headers: { "content-type": media },
-        });
-        expect(response.status).toBe(400);
-
         const headers = Object.fromEntries(
           [...response.headers].filter(
             ([key]) =>
@@ -768,57 +755,10 @@ compatScenario(
               ].includes(key),
           ),
         );
-        const body = await response.json();
-        await retainMedia(path, media, response, body);
-        expect(body).toEqual({
-          code: "VALIDATION_ERROR",
-          message: "[body] Invalid input: expected object, received string",
-        });
-        expect(await state(ctx)).toEqual(before);
-
         observations.push({ path, media, headers, body });
       }
     }
 
-    const arrayRejected = await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`, {
-      method: "POST",
-      body: JSON.stringify({ message: signed, signature: signature(signed) }),
-      headers: { "content-type": "application/octet-streamapplication/json" },
-    });
-    expect(arrayRejected.status).toBe(400);
-
-    const arrayBody = await arrayRejected.json();
-    await retainMedia(
-      "/siwe/verify",
-      "application/octet-streamapplication/json",
-      arrayRejected,
-      arrayBody,
-    );
-    expect(arrayBody).toEqual({
-      code: "VALIDATION_ERROR",
-      message:
-        "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined",
-    });
-    expect(await state(ctx)).toEqual(before);
-
-    observations.push({
-      path: "/siwe/verify",
-      media: "application/octet-streamapplication/json",
-      headers: Object.fromEntries(
-        [...arrayRejected.headers].filter(
-          ([key]) =>
-            ![
-              "date",
-              "content-length",
-              "server",
-              "connection",
-              "keep-alive",
-              "transfer-encoding",
-            ].includes(key),
-        ),
-      ),
-      body: arrayBody,
-    });
     const accepted = await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`, {
       method: "POST",
       body: JSON.stringify({ message: signed, signature: signature(signed) }),
@@ -1054,8 +994,8 @@ compatScenario(
     expect(result.error).toMatchObject({
       status: 401,
       message: "Something went wrong. Please try again later.",
-      error: "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
     });
+    expect(result.error).not.toHaveProperty("error");
     const rows = await state(ctx);
     expect(rows.proofs).toEqual([]);
     expect(rows.users).toHaveLength(1);

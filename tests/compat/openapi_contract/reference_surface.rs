@@ -519,6 +519,44 @@ mod tests {
         );
     }
 
+    // 5f0a0fcef documents parameters from optional query objects.
+    #[tokio::test]
+    async fn test_generated_openapi_documents_optional_core_queries() {
+        let reference = serde_json::to_value(crate::contract::schema::load_openapi_spec()).unwrap();
+        let generated = create_full_auth().await.openapi_spec().to_value().unwrap();
+        let query_parameters = |operation: &Value| {
+            operation["parameters"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|parameter| parameter["in"] == "query")
+                .map(|parameter| {
+                    serde_json::json!({
+                        "name":parameter["name"],
+                        "type":parameter["schema"]["type"],
+                        "description":parameter["schema"]["description"],
+                        "required":parameter["required"].as_bool().unwrap_or(false),
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+        for (path, method) in [
+            ("/get-session", "get"),
+            ("/get-session", "post"),
+            ("/callback/{id}", "get"),
+            ("/callback/{id}", "post"),
+            ("/reset-password", "post"),
+        ] {
+            let expected = query_parameters(&reference["paths"][path][method]);
+            assert!(!expected.is_empty(), "{method} {path}");
+            assert_eq!(
+                query_parameters(&generated["paths"][path][method]),
+                expected,
+                "{method} {path}"
+            );
+        }
+    }
+
     /// Verify the generated `OpenAPI` spec version and info fields.
     #[tokio::test]
     async fn test_generated_openapi_metadata() {

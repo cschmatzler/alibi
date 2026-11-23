@@ -132,7 +132,7 @@ mod memory_transaction_tests {
     fn memory_transaction_row_changes_use_actual_json_stringify_comparison() {
         let fixture =
             json::parse_value(include_str!("memory_transaction_json_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_auth"], "1.7.27");
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 6);
         for case in cases {
@@ -191,7 +191,7 @@ mod memory_transaction_tests {
     fn cases() -> Vec<JsValue> {
         let fixture =
             json::parse_value(include_str!("memory_transaction_isolation_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_auth"], "1.7.27");
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 5);
         cases.to_vec()
@@ -390,7 +390,7 @@ mod memory_user_id_tests {
         ) {
             let fixture =
                 json::parse_value(include_str!("memory_user_duplicate_cases.json")).unwrap();
-            assert_eq!(fixture["better_auth"], "1.7.18");
+            assert_eq!(fixture["better_auth"], "1.7.27");
             for input in fixture["inputs"].as_array().unwrap() {
                 store
                     .create_user(CreateUser {
@@ -505,7 +505,7 @@ mod memory_user_id_tests {
             let fixture =
                 json::parse_value(include_str!("memory_user_update_primitive_id_cases.json"))
                     .unwrap();
-            assert_eq!(fixture["better_auth"], "1.7.18");
+            assert_eq!(fixture["better_auth"], "1.7.27");
             let cases = fixture["cases"].as_array().unwrap();
             assert_eq!(cases.len(), 5);
             cases.to_vec()
@@ -1554,7 +1554,7 @@ mod memory_user_id_tests {
             );
         }
 
-        // Better Auth 1.7.18 memory-adapter.ts:176-225, Node default en-US.
+        // Better Auth 1.7.27 memory-adapter.ts:176-225, Node default en-US.
         for field in ["name", "username", "role", "email"] {
             for direction in [None, Some("asc"), Some("desc")] {
                 let expected = match (field, direction) {
@@ -1664,7 +1664,7 @@ mod memory_user_id_tests {
                 .unwrap();
         }
 
-        // Better Auth 1.7.18 memory-adapter.ts:176-225; Node en-US oracle.
+        // Better Auth 1.7.27 memory-adapter.ts:176-225; Node en-US oracle.
         for field in ["id", "_id"] {
             for direction in [None, Some("asc"), Some("desc")] {
                 for filtered in [false, true] {
@@ -1785,7 +1785,7 @@ mod memory_user_id_tests {
         use crate::utils::json::{self, JsValue};
         let fixture =
             json::parse_value(include_str!("memory_user_update_order_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_auth"], "1.7.27");
         for id in ["first", "middle", "last"] {
             store
                 .create_user(CreateUser {
@@ -1923,11 +1923,11 @@ mod memory_user_sort_tests {
     fn oracle() -> Oracle {
         let data: Oracle =
             serde_json::from_str(include_str!("memory_user_sort_cases.json")).unwrap();
-        assert_eq!(data.node, "v26.13.0");
+        assert_eq!(data.node, "v26.13.1");
         assert_eq!(data.v8, "14.6.202.34-node.40");
         assert_eq!(data.icu, "78.3");
         assert_eq!(data.locale, "en-US");
-        assert_eq!(data.better_auth, "1.7.18");
+        assert_eq!(data.better_auth, "1.7.27");
         assert_eq!(data.cases.len(), 77);
         data
     }

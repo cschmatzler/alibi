@@ -15,7 +15,7 @@ for (const mode of ["default", "oauth", "disabled", "configured"] as const) {
       expect(document.token_endpoint).toBe(`${ctx.baseURL}/api/auth/oauth2/token`);
       expect(document.code_challenge_methods_supported).toEqual(["S256"]);
       if (mode === "configured") {
-        expect(document.issuer).toBe("https://issuer.fixture.test/tenant");
+        expect(document.issuer).toBe("http://issuer.fixture.test/tenant");
         expect(document.jwks_uri).toBe("https://keys.fixture.test/jwks");
         expect(document.registration_endpoint).toBe(`${ctx.baseURL}/api/auth/oauth2/register`);
         expect(document.response_types_supported).toEqual([]);

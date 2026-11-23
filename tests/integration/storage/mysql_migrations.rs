@@ -61,7 +61,7 @@ async fn mysql_bundled_migrations_match_actual_source_schema() -> TestResult {
     store.migrate().await?;
     rates.migrate().await?;
     let expected: Value =
-        serde_json::from_str(include_str!("../../fixtures/schema/mysql-1.7.18.json"))?;
+        serde_json::from_str(include_str!("../../fixtures/schema/mysql-1.7.27.json"))?;
     assert_eq!(schema(&connection).await?, expected);
     store.migrate().await?;
     rates.migrate().await?;

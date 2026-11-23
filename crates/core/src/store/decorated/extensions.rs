@@ -877,6 +877,10 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    fn supports_scim_transactions(&self) -> bool {
+        self.inner.supports_scim_transactions()
+    }
+
     async fn find_scim_identity_tombstone(
         &self,
         connection: &str,
@@ -1017,9 +1021,10 @@ impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
         &self,
         id: &str,
         domain: &str,
-    ) -> AuthResult<Option<Vec<crate::store::ScimManagedConnectionEvent>>> {
+        page: crate::store::scim::ScimManagedConnectionEventQuery,
+    ) -> AuthResult<Option<crate::store::scim::ScimManagedConnectionEventPage>> {
         self.inner
-            .list_scim_managed_connection_events(id, domain)
+            .list_scim_managed_connection_events(id, domain, page)
             .await
     }
 

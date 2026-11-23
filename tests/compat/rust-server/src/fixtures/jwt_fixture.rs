@@ -73,10 +73,10 @@ impl AuthPlugin<TestSchema> for EarlierExposedHeaders {
         &self,
         req: &AuthRequest,
         _ctx: &AuthContext<TestSchema>,
-        mut response: AuthResponse,
+        response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
         if self.0 && req.path() == "/get-session" {
-            _ = response.headers.insert(
+            req.queue_response_header(
                 "access-control-expose-headers",
                 " existing, ,existing, set-auth-jwt, set-auth-jwt, Existing ",
             );

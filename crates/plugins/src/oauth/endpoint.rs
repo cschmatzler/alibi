@@ -449,10 +449,19 @@ impl OAuthPlugin {
                 .config
                 .provider(&body.provider)
                 .ok_or_else(|| AuthError::not_found("Provider not found"))?;
-            let value =
+            let (value, account_cookie) =
                 super::handlers::sign_in_with_id_token_core(&body, token, provider, &meta, ctx)
                     .await?;
             let mut response = EndpointResponse::json(&value)?;
+            if let Some(account_cookie) = &account_cookie {
+                for cookie in super::handlers::create_account_cookie_headers(
+                    &ctx.config,
+                    account_cookie,
+                    call,
+                )? {
+                    response = response.with_header("set-cookie", cookie);
+                }
+            }
             if let Some(token) = &value.token {
                 response.merge_headers(crate::authentication_helpers::session_cookie_headers(
                     &ctx.config,

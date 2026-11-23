@@ -75,6 +75,22 @@ pub trait VerificationStore<S: AuthSchema>: Send + Sync {
             "raw verification lookup is not supported by this store",
         ))
     }
+    /// Read physical generations of one identifier, newest first.
+    async fn list_verifications_by_identifier(
+        &self,
+        identifier: &str,
+        limit: u32,
+        offset: u32,
+    ) -> AuthResult<Vec<S::Verification>> {
+        if limit == 0 || offset != 0 {
+            return Ok(Vec::new());
+        }
+        Ok(self
+            .get_latest_verification_by_identifier(identifier)
+            .await?
+            .into_iter()
+            .collect())
+    }
     /// Atomically invalidate an identifier and return its newest generation.
     /// Exactly one concurrent caller can receive a row. Expired records are
     /// removed along with every sibling and return `None`.
@@ -112,6 +128,15 @@ pub trait VerificationStore<S: AuthSchema>: Send + Sync {
     }
     async fn delete_verification(&self, id: &str) -> AuthResult<()>;
     async fn delete_expired_verifications(&self) -> AuthResult<usize>;
+    /// Delete the expired rows of one identifier through the same hooks as
+    /// [`Self::delete_expired_verifications`]. Stores without a narrower
+    /// predicate fall back to the global sweep, which also removes them.
+    async fn delete_expired_verifications_by_identifier(
+        &self,
+        _identifier: &str,
+    ) -> AuthResult<usize> {
+        self.delete_expired_verifications().await
+    }
 }
 
 /// Upstream's deterministic database key for first-writer verification claims.

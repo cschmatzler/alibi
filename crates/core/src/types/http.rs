@@ -184,7 +184,8 @@ impl Headers {
         self.0.push((name.into(), value.into()));
     }
 
-    /// Merge endpoint headers, appending cookies and replacing other fields by name.
+    /// Merge endpoint headers, appending cookies, adding the names that
+    /// `Access-Control-Expose-Headers` lacks and replacing other fields by name.
     pub fn merge(&mut self, headers: Self) {
         for (name, value) in headers {
             self.merge_header(name, value);
@@ -194,6 +195,26 @@ impl Headers {
     pub(crate) fn merge_header(&mut self, name: String, value: String) {
         if name.eq_ignore_ascii_case("set-cookie") {
             self.append(name, value);
+        } else if name.eq_ignore_ascii_case("access-control-expose-headers") {
+            // The value is a list, so a later source must not drop names an
+            // earlier one exposed.
+            let mut exposed: Vec<String> = self
+                .get_all(&name)
+                .flat_map(|current| current.split(','))
+                .map(str::trim)
+                .filter(|header| !header.is_empty())
+                .map(str::to_owned)
+                .collect();
+            for header in value.split(',').map(str::trim) {
+                if !header.is_empty()
+                    && !exposed
+                        .iter()
+                        .any(|item| item.eq_ignore_ascii_case(header))
+                {
+                    exposed.push(header.to_owned());
+                }
+            }
+            _ = self.insert(name, exposed.join(", "));
         } else {
             _ = self.insert(name, value);
         }
@@ -440,6 +461,11 @@ impl AuthRequest {
         *self.session_hook_snapshot.lock_unpoisoned() = Some((user, session));
     }
 
+    /// Forget the recorded session snapshot, so completed hooks see none.
+    pub fn clear_session_hook_snapshot(&self) {
+        *self.session_hook_snapshot.lock_unpoisoned() = None;
+    }
+
     /// Return the handler's original session context for completed-response hooks.
     /// This is an observation of a read, not an authorization result.
     pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
@@ -579,3 +605,46 @@ impl axum::response::IntoResponse for AuthResponse {
         ::http::Response::from(self).map(axum::body::Body::from)
     }
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::Headers;
+
+    /// Upstream #12603: an error keeps the names a hook or the endpoint
+    /// exposed earlier, while other fields are still replaced.
+    #[test]
+    fn merging_keeps_every_exposed_header_name() {
+        let mut accumulated = Headers::new();
+        _ = accumulated.insert("Access-Control-Expose-Headers", "X-Request-Id");
+        accumulated.append("access-control-expose-headers", "X-Cache");
+        _ = accumulated.insert("X-Replaced", "hook");
+        accumulated.append("Set-Cookie", "a=1");
+        let mut error = Headers::new();
+        _ = error.insert(
+            "access-control-expose-headers",
+            "WWW-Authenticate, x-request-id",
+        );
+        _ = error.insert("x-replaced", "error");
+        error.append("set-cookie", "b=2");
+        accumulated.merge(error);
+        assert_eq!(
+            accumulated
+                .get("access-control-expose-headers")
+                .map(String::as_str),
+            Some("X-Request-Id, X-Cache, WWW-Authenticate")
+        );
+        assert_eq!(
+            accumulated
+                .get_all("access-control-expose-headers")
+                .count(),
+            1
+        );
+        assert_eq!(
+            accumulated.get("X-Replaced").map(String::as_str),
+            Some("error")
+        );
+        assert_eq!(accumulated.get_all("set-cookie").count(), 2);
+    }
+}
+// LCOV_EXCL_STOP

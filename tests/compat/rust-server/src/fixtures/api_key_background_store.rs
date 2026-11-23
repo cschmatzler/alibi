@@ -539,7 +539,8 @@ delegate_store!(ScimManagedStore, {
         &self,
         id: &str,
         domain: &str,
-    ) -> AuthResult<Option<Vec<ScimManagedConnectionEvent>>>;
+        page: scim::ScimManagedConnectionEventQuery,
+    ) -> AuthResult<Option<scim::ScimManagedConnectionEventPage>>;
     async fn revoke_scim_managed_credential(
         &self,
         data: RevokeScimManagedCredential,

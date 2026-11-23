@@ -33,5 +33,5 @@ for (const field of ["name", "transports", "aaguid"]) {
 await close();
 assert.equal(cases.length, 36);
 assert.equal(cases.filter(row => row.error).length, 9);
-await writeFile(new URL("../../../crates/core/src/store/passkey_raw_optional_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/passkey_raw_optional_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual passkey raw optional-value cases`);

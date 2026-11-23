@@ -205,15 +205,18 @@ async fn prepare_user_value(
     exec: Exec<'_>,
     kind: ColumnKind,
     value: RawFieldValue,
+    declared_json: bool,
 ) -> AuthResult<SqlValue> {
     let value = if matches!(kind, ColumnKind::Timestamp | ColumnKind::NaiveTimestamp) {
         value.revive_date_string()
     } else {
         value
     };
-    if exec.engine() == Engine::Postgres && kind == ColumnKind::Json {
+    if exec.engine() == Engine::Postgres
+        && (kind == ColumnKind::Json || kind == ColumnKind::Text && declared_json)
+    {
         return Ok(SqlValue::Text(
-            alibi_core::store::postgres_parameter::text_parameter(&value.into())?
+            alibi_core::store::postgres_parameter::json_write_parameter(&value.into())?
                 .map(|text| text.to_utf8_binding()),
         ));
     }
@@ -225,6 +228,16 @@ where
     S: AuthSchema,
     S::User: SqlxUserModel,
 {
+    fn user_json_column(&self, column: &str) -> bool {
+        self.config().user.additional_fields.iter().any(|(name, field)| {
+            field.schema.get("type").and_then(serde_json::Value::as_str) == Some("json")
+                && field.field_name.as_deref().map_or_else(
+                    || S::User::list_users_column(name) == Some(column),
+                    |name| name == column,
+                )
+        })
+    }
+
     async fn create_user_with_connection(
         &self,
         exec: Exec<'_>,
@@ -298,7 +311,7 @@ where
                     Some((
                         column,
                         SqlValue::Text(
-                            alibi_core::store::postgres_parameter::text_parameter(
+                            alibi_core::store::postgres_parameter::json_write_parameter(
                                 &alibi_core::utils::json::JsValue::from(value.clone()),
                             )?
                             .map(|text| text.to_utf8_binding()),
@@ -326,8 +339,13 @@ where
         let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value =
-                prepare_user_value(exec, <S::User as SqlxModel>::column_kind(column), value)
-                    .await?;
+                prepare_user_value(
+                    exec,
+                    <S::User as SqlxModel>::column_kind(column),
+                    value,
+                    backend == Engine::Postgres && self.user_json_column(column),
+                )
+                .await?;
             S::User::set_additional_field(&mut active, column, value, backend)?;
         }
         for (field, raw) in native_fields {
@@ -341,7 +359,10 @@ where
             if field == "id" && !alibi_core::utils::json::JsValue::from(raw.clone()).is_truthy() {
                 continue;
             }
-            if (raw.is_object() || raw.is_array()) && kind != ColumnKind::Json {
+            let declared_json = backend == Engine::Postgres && self.user_json_column(column);
+            if (raw.is_object() || raw.is_array())
+                && !(kind == ColumnKind::Json || kind == ColumnKind::Text && declared_json)
+            {
                 return Err(AuthError::internal("Unsupported native user SQL parameter"));
             }
             let value =
@@ -358,7 +379,7 @@ where
                     value => value,
                 }
             } else {
-                prepare_user_value(exec, kind, value).await?
+                prepare_user_value(exec, kind, value, declared_json).await?
             };
             active.set(column, value);
         }
@@ -428,6 +449,13 @@ where
         let field = user_filter::field(filter_field);
         let column = S::User::list_users_column(field)
             .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
+        if matches!(value, UserFilterValue::Native(alibi_core::utils::json::JsValue::Null))
+            && matches!(operator, "eq" | "ne")
+        {
+            sql.ident(column);
+            sql.push(if operator == "eq" { " IS NULL" } else { " IS NOT NULL" });
+            return Ok(());
+        }
         let kind = match <S::User as SqlxModel>::column_kind(column) {
             ColumnKind::Boolean => Column::Boolean,
             ColumnKind::Number => Column::Number,
@@ -807,7 +835,13 @@ where
             {
                 crate::additional_fields::bind_scalar(raw)?
             } else {
-                prepare_user_value(exec, kind, raw).await?
+                prepare_user_value(
+                    exec,
+                    kind,
+                    raw,
+                    exec.engine() == Engine::Postgres && self.user_json_column(column),
+                )
+                .await?
             };
             active.set(column, value);
         }

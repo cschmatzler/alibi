@@ -10,12 +10,14 @@ use alibi::plugins::oauth::{
 };
 use alibi::plugins::{AccountManagementPlugin, EmailVerificationPlugin, SendVerificationEmail};
 use alibi::prelude::UserView;
+use alibi::store::DatabaseHooks;
 use alibi::{AccountConfig, AccountLinkingConfig};
 
 backend_tests!(
     redirect_linking_outcomes,
     id_token_linking_outcomes,
     id_token_sign_in_outcomes,
+    oauth_sign_up_cancelled_by_user_hook,
     callback_protocol_outcomes,
     sign_in_policies,
     valid_form_post_preserves_issued_state_and_escaped_query_until_get,
@@ -122,7 +124,7 @@ impl Social {
         }
     }
 
-    fn google(&self, configure: impl FnOnce(&mut OAuthProvider)) -> OAuthProvider {
+    pub(super) fn google(&self, configure: impl FnOnce(&mut OAuthProvider)) -> OAuthProvider {
         let mut provider = OAuthProvider::google("google-client", "google-secret");
         provider.token_url = self.provider.url.join("token").unwrap().into();
         provider.get_user_info = Some(Arc::new(self.profile.clone()));
@@ -204,6 +206,48 @@ pub(super) async fn callback<S: AuthSchema>(
     let mut request = request("/callback/google", None, cookie);
     request.set_query_pairs(query.iter().copied());
     Box::pin(auth.handle_request(request)).await.unwrap()
+}
+
+// Better Auth #12331 treats a cancelled user creation as a normal OAuth failure.
+async fn oauth_sign_up_cancelled_by_user_hook<B: Backend>(db: Db) -> TestResult {
+    struct CancelUser;
+
+    #[async_trait::async_trait]
+    impl<S: AuthSchema, B: alibi::store::HookBackend> DatabaseHooks<S, B> for CancelUser {
+        async fn before_create_user(
+            &self,
+            _: &mut alibi::CreateUser,
+            _: &alibi::store::DatabaseHookContext<'_, B>,
+        ) -> alibi::AuthResult<alibi::store::HookControl> {
+            Ok(alibi::store::HookControl::Cancel)
+        }
+    }
+
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let auth = social
+        .auth_configured::<B>(
+            &connection,
+            AuthConfig::new(SECRET).base_url(ORIGIN),
+            |_| {},
+            |builder| builder,
+            |store| B::hook(store, CancelUser),
+        )
+        .await?;
+    let (state, cookies) = authorize(
+        &auth,
+        "/sign-in/social",
+        json!({"provider":"google","callbackURL":"/home","errorCallbackURL":"/failed"}),
+        "",
+    )
+    .await;
+    let response = callback(&auth, &[("code", "grant"), ("state", &state)], &cookies).await;
+    assert_eq!(response.status, 302);
+    assert!(response.headers["location"].ends_with("/failed?error=unable_to_create_user"));
+    for table in ["user", "account", "session"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
+    B::close(connection).await
 }
 
 pub(super) async fn accounts<S: AuthSchema>(auth: &Alibi<S>, cookie: &str) -> Value {

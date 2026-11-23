@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { memoryAdapter } from "../reference-server/node_modules/@better-auth/memory-adapter/dist/index.mjs";
 
-assert.equal(process.version, "v26.13.0");
+assert.equal(process.version, "v26.13.1");
 assert.equal(process.versions.v8, "14.6.202.34-node.40");
 assert.equal(process.versions.icu, "78.3");
 assert.equal(Intl.DateTimeFormat().resolvedOptions().locale, "en-US");
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
 
 function* permutations(values) {
   if (!values.length) {

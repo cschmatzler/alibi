@@ -195,13 +195,15 @@ compatScenario(
       expect(new URL(body.url, ctx.baseURL).searchParams.get("error")).toBe(error);
       rejected.push(body);
     }
-    const missing = await control({
+    const headersOnly = await control({
       action: "authorize",
       query,
       headers: { accept: "application/json" },
       attachRequest: false,
     });
-    expect(missing.status).toBe(401);
+    expect(headersOnly.status).toBe(200);
+    const headersOnlyBody = (await headersOnly.json()) as any;
+    expect(new URL(headersOnlyBody.url, ctx.baseURL).pathname).toBe("/login");
     const reservedCallback =
       "https://app.fixture.test/callback?code=stale&keep=first&code=duplicate&state=stale&iss=stale&keep=second";
     const managedResponse = await control({
@@ -444,7 +446,7 @@ compatScenario(
           { redirect_uri: "http://app.fixture.test/callback" },
           false,
           "invalid_request",
-          "redirect_uri: Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
+          "Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
           false,
         ],
         [
@@ -457,15 +459,15 @@ compatScenario(
         [
           { redirect_uri: "http://localhost./callback" },
           false,
-          "invalid_redirect",
-          "invalid redirect uri",
+          "invalid_request",
+          "Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
           false,
         ],
         [
           { redirect_uri: "http://[::ffff:127.0.0.1]/callback" },
           false,
-          "invalid_redirect",
-          "invalid redirect uri",
+          "invalid_request",
+          "Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
           false,
         ],
         [
@@ -910,7 +912,7 @@ compatScenario(
       proof: ctx.snapshot(proof),
       redirect: ctx.snapshot(value),
       rejected: ctx.snapshot(rejected),
-      missing: await missing.json(),
+      headersOnly: headersOnlyBody,
     };
   },
 );
@@ -1113,7 +1115,12 @@ async function assertRedirectPolicy(
         error: "unsupported_response_type",
         called: false,
       })),
-      { patch: { response_type: "token" }, uri: `\uFEFF${preview}`, status: 500, called: false },
+      {
+        patch: { response_type: "token" },
+        uri: `\uFEFF${preview}`,
+        error: "unsupported_response_type",
+        called: false,
+      },
       ...(transport === "private"
         ? [
             {
@@ -1141,7 +1148,7 @@ async function assertRedirectPolicy(
         headers: { accept: "application/json", cookie },
         query,
       });
-      expect(response.status, JSON.stringify({ transport, test })).toBe(test.status ?? 200);
+      expect(response.status, JSON.stringify({ transport, test })).toBe(200);
       expect(response.headers.getSetCookie()).toEqual([]);
       const calls = await (await policy({ action: "redirect-policy-calls" })).json();
       expect(calls, JSON.stringify({ transport, query })).toEqual(
@@ -1149,11 +1156,6 @@ async function assertRedirectPolicy(
           ? [{ uri: test.callbackUri ?? test.uri, registered, defaultResult: test.defaultResult }]
           : [],
       );
-      if (test.status === 500) {
-        expect(await response.text()).toBe("");
-        results.push({ transport, query, calls, status: 500 });
-        continue;
-      }
       const result = await response.json();
       const target = new URL(result.url, baseURL);
       let stored = null;

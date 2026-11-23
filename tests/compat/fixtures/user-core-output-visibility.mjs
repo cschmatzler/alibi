@@ -4,9 +4,9 @@ import { memoryAdapter } from "../reference-server/node_modules/@better-auth/mem
 import { parseUserOutput } from "../reference-server/node_modules/better-auth/dist/db/schema.mjs";
 
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/better-auth/package.json", import.meta.url))).version, "1.7.18");
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/better-auth/package.json", import.meta.url))).version, "1.7.27");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/memory-adapter/package.json", import.meta.url))).version, "1.7.27");
 const cases = [];
 for (const field of ["name", "id", "email", "emailVerified", "image", "createdAt", "updatedAt"]) {
   const input = { id: "owner", name: "Owner", email: "owner@example.com", emailVerified: false, image: null, createdAt: new Date(0), updatedAt: new Date(0) };
@@ -20,5 +20,5 @@ for (const field of ["name", "id", "email", "emailVerified", "image", "createdAt
   cases.push({ field, type, input, trusted, output });
 }
 assert.equal(cases.length, 7);
-await writeFile(new URL("../../../crates/core/src/store/user_core_visibility_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/user_core_visibility_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual core user returned:false projection cases`);

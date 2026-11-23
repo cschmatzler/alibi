@@ -1414,4 +1414,166 @@ mod tests {
         let not_found = db.get_user_by_username("no_user").await.unwrap();
         assert!(not_found.is_none());
     }
+
+    /// A POST whose body arrives as an empty stream, as Next.js, Nuxt and Deno
+    /// pass a bodyless request.
+    fn bodyless_post(
+        auth: &Alibi<TestSchema>,
+        path: &str,
+        token: &str,
+        headers: &[(&str, &str)],
+    ) -> alibi::prelude::AuthRequest {
+        let mut request = alibi::prelude::AuthRequest::new(alibi::prelude::HttpMethod::Post, path);
+        request.body = Some(Vec::new());
+        request
+            .headers
+            .insert("cookie".to_owned(), test_session_cookie(token, auth));
+        request
+            .headers
+            .insert("origin".to_owned(), "http://localhost:3000".to_owned());
+        for (name, value) in headers {
+            request
+                .headers
+                .insert((*name).to_owned(), (*value).to_owned());
+        }
+        request
+    }
+
+    fn expires_session_cookie(response: &alibi::AuthResponse) -> bool {
+        response.headers.get_all("set-cookie").any(|cookie| {
+            cookie.starts_with("better-auth.session_token=;") && cookie.contains("Max-Age=0")
+        })
+    }
+
+    /// Upstream: packages/better-auth/src/api/index.test.ts "requests without content".
+    #[tokio::test]
+    async fn bodyless_post_with_an_empty_stream_is_not_a_media_type_error() {
+        for headers in [&[][..], &[("content-length", "0")][..]] {
+            let auth = create_test_auth_memory().await;
+            let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
+            let response = auth
+                .handle_request(bodyless_post(&auth, "/sign-out", &session_token, headers))
+                .await
+                .unwrap();
+            assert_eq!(response.status, 200, "{headers:?}");
+            let (status, session) =
+                send_request(&auth, get_with_auth("/get-session", &session_token)).await;
+            assert_eq!(status, 200);
+            assert_eq!(session, serde_json::Value::Null);
+        }
+
+        let auth = create_test_auth_memory().await;
+        let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
+        let mut content = bodyless_post(&auth, "/sign-out", &session_token, &[]);
+        content.body = Some(b"{}".to_vec());
+        let response = auth.handle_request(content).await.unwrap();
+        assert_eq!(response.status, 415);
+
+        let cross_site = bodyless_post(
+            &auth,
+            "/sign-out",
+            &session_token,
+            &[("origin", "https://attacker.example")],
+        );
+        let response = auth.handle_request(cross_site).await.unwrap();
+        assert_eq!(response.status, 403);
+    }
+
+    /// Upstream: session-api.test.ts "should accept a refresh POST whose empty
+    /// body arrives as a stream". The POST form never reads its body.
+    #[tokio::test]
+    async fn deferred_refresh_post_ignores_its_body() {
+        let mut config = test_config();
+        config.session.defer_session_refresh = true;
+        let auth = TestHarness::minimal_with_config(config).await.into_arc();
+        let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
+        for (content_type, body) in [
+            (None, Vec::new()),
+            (Some("text/plain"), b"not json".to_vec()),
+        ] {
+            let mut request = bodyless_post(&auth, "/get-session", &session_token, &[]);
+            request.body = Some(body);
+            if let Some(content_type) = content_type {
+                request
+                    .headers
+                    .insert("content-type".to_owned(), content_type.to_owned());
+            }
+            let response = auth.handle_request(request).await.unwrap();
+            assert_eq!(response.status, 200, "{content_type:?}");
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(body["user"]["email"], "integration@test.com");
+        }
+    }
+
+    /// Upstream #12321: revoking the current session expires its cookies.
+    #[tokio::test]
+    async fn revoking_the_current_session_expires_its_cookies() {
+        let auth = create_test_auth_memory().await;
+        let (_user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
+        let (other_token, _) = signin_user(&auth, "integration@test.com", "password123").await;
+
+        let response = auth
+            .handle_request(post_json_with_auth(
+                "/revoke-session",
+                serde_json::json!({ "token": other_token }),
+                &session_token,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert!(!expires_session_cookie(&response));
+
+        let response = auth
+            .handle_request(post_json_with_auth(
+                "/revoke-session",
+                serde_json::json!({ "token": session_token }),
+                &session_token,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert!(expires_session_cookie(&response));
+
+        let (session_token, _) = signin_user(&auth, "integration@test.com", "password123").await;
+        let response = auth
+            .handle_request(bodyless_post(&auth, "/revoke-sessions", &session_token, &[]))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert!(expires_session_cookie(&response));
+        let (_, session) = send_request(&auth, get_with_auth("/get-session", &session_token)).await;
+        assert_eq!(session, serde_json::Value::Null);
+    }
+
+    /// Upstream #12321: deleting the user with a token expires the caller's
+    /// session cookies, like deleting without one.
+    #[tokio::test]
+    async fn deleting_the_user_with_a_token_expires_its_cookies() {
+        use alibi::prelude::CreateVerification;
+        use chrono::{Duration, Utc};
+
+        let auth = create_test_auth_memory().await;
+        let (user_id, session_token) = create_test_user_and_session(Arc::clone(&auth)).await;
+        let token = format!("delete_{}", uuid::Uuid::new_v4());
+        auth.store()
+            .create_verification(CreateVerification {
+                identifier: format!("delete-account-{token}"),
+                value: user_id.clone(),
+                expires_at: Utc::now() + Duration::hours(24),
+            })
+            .await
+            .unwrap();
+
+        let response = auth
+            .handle_request(post_json_with_auth(
+                "/delete-user",
+                serde_json::json!({ "token": token }),
+                &session_token,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert!(expires_session_cookie(&response));
+        assert!(auth.store().get_user_by_id(&user_id).await.unwrap().is_none());
+    }
 }

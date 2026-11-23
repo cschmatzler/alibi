@@ -13,6 +13,7 @@ backend_tests!(
     cookie_emission_failure_preserves_endpoint_commit_stage,
     username_unicode_identity_admission,
     username_readonly_registration_admission,
+    username_and_phone_hooks_leave_bodyless_requests_to_validation,
     application_id_policy_owns_signup_principals_and_verification,
     rate_storage_failures_preserve_signup_and_recovery_authority
 );
@@ -1007,6 +1008,46 @@ async fn username_unicode_identity_admission<B: Backend>(db: Db) -> TestResult {
     assert_eq!(body(&signed)["user"]["id"], body(&owner)["user"]["id"]);
     assert_eq!(db.table("account").await?, accounts);
     authenticated(&auth, &cookies(&signed), "unicode-owner@example.test").await;
+    B::close(connection).await
+}
+
+// Pinned username.test.ts and phone-number.test.ts :: "... with a request that
+// has no body": the plugin hooks leave missing, null and primitive bodies to
+// the endpoint's own validation instead of failing with a 500.
+async fn username_and_phone_hooks_leave_bodyless_requests_to_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new().enable_username(true))
+        .plugin(alibi::plugins::phone_number::PhoneNumberPlugin::new(
+            Default::default(),
+        ))
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    for (path, raw) in [
+        ("/sign-up/email", None),
+        ("/sign-up/email", Some("null")),
+        ("/update-user", None),
+        ("/update-user", Some("null")),
+        ("/update-user", Some("\"phoneNumber\"")),
+    ] {
+        let mut request = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
+        _ = request.headers.insert("origin".into(), ORIGIN.into());
+        if let Some(raw) = raw {
+            _ = request
+                .headers
+                .insert("content-type".into(), "application/json".into());
+            request.body = Some(raw.as_bytes().to_vec());
+        }
+        let response = call(&auth, request, 400).await;
+        assert_eq!(body(&response)["code"], "VALIDATION_ERROR", "{path} {raw:?}");
+    }
+    assert_eq!(db.tables(&["user"]).await?, vec!["[]".to_owned()]);
     B::close(connection).await
 }
 

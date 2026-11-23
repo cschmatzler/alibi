@@ -8,7 +8,7 @@ async fn check_presence(store: &impl PasskeyStore, backend: &str) -> TestResult 
     let fixture = native::parse_value(include_str!(
         "../../../../crates/core/src/store/passkey_field_presence_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let mut count = 0;
     for case in fixture["cases"]
         .as_array()

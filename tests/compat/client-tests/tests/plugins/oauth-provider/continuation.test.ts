@@ -262,14 +262,6 @@ compatScenario(
       ],
       [{ selected: true, oauth_query: signed }, {}, true, 401, null, null],
       [{ selected: 42, oauth_query: signed }, { cookie }, true, 400, null, null],
-      [
-        { selected: true, oauth_query: signed },
-        { cookie },
-        false,
-        401,
-        "invalid_request",
-        "request not found",
-      ],
     ] as const) {
       const r = await control({ action: "continue", body, headers, attachRequest: attach });
       expect(r.status).toBe(status);
@@ -289,6 +281,7 @@ compatScenario(
       action: "continue",
       body: { selected: true, oauth_query: signed },
       headers: { cookie },
+      attachRequest: false,
     });
     expect(selected.status).toBe(200);
     const selection = (await selected.json()) as any;

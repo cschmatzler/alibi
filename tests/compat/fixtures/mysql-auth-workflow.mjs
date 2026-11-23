@@ -96,7 +96,7 @@ try {
   assert.equal(passkeys.length, 0);
   assert.equal(cases.length, 13);
   await writeFile(new URL("../../fixtures/mysql-source-schema.sql", import.meta.url), sql + "\n");
-  await writeFile(new URL("../../fixtures/mysql-auth-workflow.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", mysql: database.mysqlVersion, cases }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-auth-workflow.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", mysql: database.mysqlVersion, cases }) + "\n");
   console.log(`${cases.length} actual MySQL HTTP workflow responses and final physical state`);
 } finally {
   await database.close();

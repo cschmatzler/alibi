@@ -1,4 +1,4 @@
-{"better_auth":"1.7.18","cases":[{"creation":false,"required":false,"has_default":false,"on_update":false,"transform":false,"kind":"absent","input":null,"present":true,"expected":"stored","events":[],"observed":[]},
+{"better_auth":"1.7.27","cases":[{"creation":false,"required":false,"has_default":false,"on_update":false,"transform":false,"kind":"absent","input":null,"present":true,"expected":"stored","events":[],"observed":[]},
 {"creation":false,"required":false,"has_default":false,"on_update":false,"transform":false,"kind":"undefined","input":null,"present":true,"expected":"stored","events":[],"observed":[]},
 {"creation":false,"required":false,"has_default":false,"on_update":false,"transform":false,"kind":"null","input":null,"present":true,"expected":null,"events":[],"observed":[]},
 {"creation":false,"required":false,"has_default":false,"on_update":false,"transform":false,"kind":"false","input":false,"present":true,"expected":false,"events":[],"observed":[]},

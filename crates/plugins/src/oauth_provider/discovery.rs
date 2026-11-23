@@ -19,6 +19,21 @@ pub trait OAuthClientDiscovery: Send + Sync + std::fmt::Debug {
         None
     }
 
+    /// Maximum age in seconds for using cached keys during a transient refresh failure.
+    fn jwks_stale_if_error(&self) -> Option<f64> {
+        None
+    }
+
+    /// Allow a public HTTPS key URL outside the client's origin and trusted origins.
+    async fn is_cross_origin_jwks_uri_allowed(
+        &self,
+        _context: &CallbackContext,
+        _client_id: &str,
+        _jwks_uri: &str,
+    ) -> AuthResult<bool> {
+        Ok(false)
+    }
+
     /// Resolve or refresh a matching identity using the actual initialized callback context.
     /// Returning None for an owned row fails closed rather than treating it as managed.
     async fn resolve(
@@ -153,4 +168,37 @@ async fn resolve_configured<S: AuthSchema>(
         }
     }
     Ok(None)
+}
+
+impl super::OAuthProviderPlugin {
+    pub(super) fn client_discovery(&self, id: &str) -> Option<&dyn OAuthClientDiscovery> {
+        self.config.client_discoveries.iter()
+            .find(|source| source.id() == id)
+            .map(Arc::as_ref)
+    }
+
+    pub(super) async fn allows_discovered_jwks_origin<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        request: Option<&alibi_core::AuthRequest>,
+        owner: &str,
+        client_id: &str,
+        uri: &str,
+    ) -> bool {
+        if url::Url::parse(client_id).ok().zip(url::Url::parse(uri).ok())
+            .is_some_and(|(id, key)| matches!(id.scheme(), "https" | "http") && id.origin() == key.origin())
+        {
+            return true;
+        }
+        let Some(discovery) = self.client_discovery(owner) else {
+            return false;
+        };
+        discovery
+            .is_cross_origin_jwks_uri_allowed(&CallbackContext::new(ctx, request), client_id, uri)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, owner, "client discovery denied the JWKS origin");
+                false
+            })
+    }
 }

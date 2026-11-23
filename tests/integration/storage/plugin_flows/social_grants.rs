@@ -116,7 +116,8 @@ async fn authorization_urls_follow_the_provider_policy<B: Backend>(db: Db) -> Te
             json!({"additionalParams":{"appid":"forged","audience":"api"}}),
         ),
         (
-            "existing endpoint parameters are replaced in place",
+            // Better Auth #12572 retains endpoint parameters before setting its own.
+            "endpoint parameters kept before replacements",
             |provider| {
                 provider.auth_url =
                     "https://accounts.example/authorize?response_type=token&keep=1&response_type=again".into();

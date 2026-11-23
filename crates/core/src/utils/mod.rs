@@ -7,6 +7,7 @@ pub mod javascript;
 pub mod json;
 pub mod jwe;
 pub mod password;
+pub mod redirect_uri;
 pub mod sessions;
 pub mod username;
 pub mod wildcard;

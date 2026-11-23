@@ -1261,17 +1261,18 @@ async fn check_formatter_rotation<S: AuthSchema>(
         "application-refresh-{}",
         generators.refresh_count.lock().unwrap()
     );
-    assert!(
+    // A rotated token stays bound to its parent's session.
+    assert_eq!(
         auth.store()
             .get_oauth_token(OAuthTokenKind::Refresh, &hash(&raw))
             .await?
             .unwrap()
-            .session_id
-            .is_none()
+            .session_id,
+        original.session_id
     );
     assert_eq!(
         formatter.calls.lock().unwrap().last().unwrap(),
-        &json!({"kind":"encrypt","token":raw,"sessionId":null})
+        &json!({"kind":"encrypt","token":raw,"sessionId":original.session_id})
     );
     let before = formatter.calls.lock().unwrap().len();
     assert!(
@@ -1285,7 +1286,7 @@ async fn check_formatter_rotation<S: AuthSchema>(
         "failed rotation claim never formats"
     );
     params.refresh_token = None;
-    for (mode, expected) in [("async", "R_[object Promise]"), ("empty", "R_")] {
+    for mode in ["async", "empty"] {
         *formatter.encrypt_mode.lock().unwrap() = mode.into();
         let issued = Box::pin(provider.issue_tokens(
             auth.context(),
@@ -1294,7 +1295,7 @@ async fn check_formatter_rotation<S: AuthSchema>(
             &params,
         ))
         .await?;
-        assert_eq!(issued["refresh_token"], expected);
+        let presented = issued["refresh_token"].as_str().unwrap().to_owned();
         let raw = format!(
             "application-refresh-{}",
             generators.refresh_count.lock().unwrap()
@@ -1305,8 +1306,24 @@ async fn check_formatter_rotation<S: AuthSchema>(
                 .await?
                 .is_some()
         );
+        if mode == "async" {
+            // The awaited ciphertext is presented and decodes to the stored token.
+            assert_eq!(
+                refresh_formatting::open(presented.strip_prefix("R_").unwrap())?["token"],
+                raw
+            );
+            let response = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_introspect_endpoint(&credentials(&presented))?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(body(&response)["active"], true);
+            continue;
+        }
+        assert_eq!(presented, "R_");
         let response = Box::pin(auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_introspect_endpoint(&credentials(expected))?,
+            OAuthProviderPlugin::oauth2_introspect_endpoint(&credentials(&presented))?,
             EndpointOptions::default(),
         ))
         .await
@@ -1314,7 +1331,7 @@ async fn check_formatter_rotation<S: AuthSchema>(
         assert_eq!(
             response.error.status_code(),
             500,
-            "coerced/empty outputs do not fall back to raw tokens"
+            "empty outputs do not fall back to raw tokens"
         );
     }
     assert_eq!(
@@ -1322,7 +1339,7 @@ async fn check_formatter_rotation<S: AuthSchema>(
         [
             json!({"token":format!("application-refresh-{}",*generators.refresh_count.lock().unwrap()-1),"sessionId":null})
         ],
-        "Promise work runs despite coercion of its value"
+        "Promise work is awaited"
     );
     Ok(())
 }

@@ -46,7 +46,7 @@ async fn mysql_verification_claims_match_actual_guarded_snapshots() -> TestResul
     let fixture: Value = serde_json::from_str(include_str!(
         "../../fixtures/mysql-verification-claims.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 6);
     let expires_at: chrono::DateTime<chrono::Utc> = "2030-01-02T03:04:05.678Z".parse()?;

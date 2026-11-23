@@ -387,29 +387,27 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     }
     async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
         use super::entities::{oauth_access_token, oauth_refresh_token};
-        use sea_orm::sea_query::{Expr, ExprTrait, Query};
-        let query = Query::select()
-            .column(oauth_refresh_token::Column::Id)
-            .from(oauth_refresh_token::Entity)
-            .and_where(Expr::col(oauth_refresh_token::Column::ClientId).eq(client_id))
-            .and_where(Expr::col(oauth_refresh_token::Column::UserId).eq(user_id))
-            .limit(
-                u64::try_from(self.config().advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
-            .to_owned();
-        _ = oauth_access_token::Entity::delete_many()
-            .filter(oauth_access_token::Column::RefreshId.in_subquery(query))
-            .exec(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
+        // Every access token linked to this family's refresh rows carries the
+        // same client and user, so no capped list of refresh ids is needed.
+        let delete_linked_access_tokens = || async {
+            oauth_access_token::Entity::delete_many()
+                .filter(oauth_access_token::Column::ClientId.eq(client_id))
+                .filter(oauth_access_token::Column::UserId.eq(user_id))
+                .filter(oauth_access_token::Column::RefreshId.is_not_null())
+                .exec(self.scoped_connection())
+                .await
+                .map(|_| ())
+                .map_err(map_db_err)
+        };
+        delete_linked_access_tokens().await?;
         _ = oauth_refresh_token::Entity::delete_many()
             .filter(oauth_refresh_token::Column::ClientId.eq(client_id))
             .filter(oauth_refresh_token::Column::UserId.eq(user_id))
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
-        Ok(())
+        // An in-flight issuance can store an access token between the deletes.
+        delete_linked_access_tokens().await
     }
     async fn create_oauth_token(
         &self,
@@ -507,6 +505,12 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .map_err(map_db_err)?;
         _ = super::entities::oauth_refresh_token::Entity::delete_many()
             .filter(super::entities::oauth_refresh_token::Column::AuthorizationCodeId.eq(code))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        // An in-flight redemption can store an access token between the deletes.
+        _ = super::entities::oauth_access_token::Entity::delete_many()
+            .filter(super::entities::oauth_access_token::Column::AuthorizationCodeId.eq(code))
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;

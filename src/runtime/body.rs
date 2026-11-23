@@ -217,8 +217,8 @@ mod canonical_tests {
     #[tokio::test]
     async fn canonical_body_decoding_matches_actual_better_call() {
         let fixture = json::parse_value(include_str!("body_canonical_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
-        assert_eq!(fixture["better_call"], "1.4.5");
+        assert_eq!(fixture["better_auth"], "1.7.27");
+        assert_eq!(fixture["better_call"], "1.4.6");
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 54);
         for case in cases {

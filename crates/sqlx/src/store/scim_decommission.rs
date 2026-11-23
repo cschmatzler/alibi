@@ -160,30 +160,12 @@ impl<S: AuthSchema> SqlxStore<S> {
         let mut sql = model::select_model::<user::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimUser", "userId", " = ", user_id);
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
         let users = exec.fetch_all::<user::Model>(sql).await?;
-        let connections = users
-            .iter()
-            .map(|user| user.connection_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let retired = if connections.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            let mut sql = model::select_model::<binding::Model>(exec);
-            sql.push(" WHERE ");
-            sql.column("scimConnectionBinding", "connectionId");
-            sql.push(" IN ");
-            sql.bind_list(connections);
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            exec.fetch_all::<binding::Model>(sql)
-                .await?
-                .into_iter()
-                .filter(|binding| binding.decommission_status != "active")
-                .map(|binding| binding.connection_id)
-                .collect()
-        };
+        let retired = super::scim_projection::retired_scim_connections(
+            exec,
+            users.iter().map(|user| user.connection_id.clone()),
+        )
+        .await?;
         let participating = users
             .iter()
             .filter(|user| !retired.contains(&user.connection_id))

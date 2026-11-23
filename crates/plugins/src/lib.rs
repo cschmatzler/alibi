@@ -435,7 +435,7 @@ pub use oauth_provider::{
     OAuthEndpointRateLimit, OAuthExtensionClaims, OAuthExtensionClientAuthentication,
     OAuthExtensionGrantHandler, OAuthExtensionGrantInput, OAuthInitialAccessTokenAuthorization,
     OAuthInitialAccessTokenError, OAuthInitialAccessTokenInput, OAuthInitialAccessTokenValidator,
-    OAuthInteractionContext, OAuthMetadataContributor, OAuthMetadataExtensionInput,
+    OAuthInsecureRedirectUriPolicy, OAuthInteractionContext, OAuthMetadataContributor, OAuthMetadataExtensionInput,
     OAuthMetadataType, OAuthPostLoginConfig, OAuthPostLoginContext, OAuthPostLoginPolicy,
     OAuthProviderApi, OAuthProviderConfig, OAuthProviderExtension, OAuthProviderPlugin,
     OAuthProviderRateLimits, OAuthRedirectUriValidator, OAuthRefreshTokenEncryption,

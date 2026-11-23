@@ -128,14 +128,18 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     user_agent: Option<String>,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<(Value, String)> {
-    let Some(origin) =
-        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref(), &ctx.config)
-    else {
-        return response_code(
-            500,
-            codes::ORIGIN_NOT_CONFIGURED,
-            "Passkey origin is not configured. Set the `origin` option of the passkey plugin or configure `baseURL`.",
-        );
+    use crate::passkey::webauthn::{CeremonyOrigin, ceremony_origin};
+
+    let origin = match ceremony_origin(config, req, body.response.as_ref(), &ctx.config) {
+        CeremonyOrigin::Expected(origin) => origin,
+        CeremonyOrigin::Untrusted => return passkey_authentication_failure(),
+        CeremonyOrigin::Unconfigured => {
+            return response_code(
+                500,
+                codes::ORIGIN_NOT_CONFIGURED,
+                "Passkey origin is not configured. Set the `origin` option of the passkey plugin or configure `baseURL`.",
+            );
+        }
     };
 
     let Some(cookie_value) = get_cookie(req, &challenge_cookie_name(&ctx.config, config)) else {

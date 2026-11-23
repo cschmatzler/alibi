@@ -701,8 +701,14 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
             _ = ctx
                 .hash_password(config.password_hasher.as_ref(), &body.password)
                 .await?;
-            signup::notify_existing(ctx.user_view(&user)?, request, config, ctx).await?;
-            return signup::synthetic_response(body, &additional_fields, config, ctx);
+            let response = signup::synthetic_response(body, &additional_fields, config, ctx)?;
+            if config.on_existing_user_signup.is_some() {
+                match ctx.user_view(&user) {
+                    Ok(user) => signup::notify_existing(user, request, config, ctx).await,
+                    Err(error) => tracing::error!(%error, "Failed to run onExistingUserSignUp after sign-up"),
+                }
+            }
+            return Ok(response);
         }
         // TS returns 422 UNPROCESSABLE_ENTITY for duplicate email
         return Err(AuthError::UnprocessableEntity(
@@ -756,22 +762,12 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
     let ip_address = meta.ip_address.clone();
     let user_agent = meta.user_agent.clone();
     let database = Arc::clone(&ctx.database);
-    let transaction_database = Arc::clone(&database);
-    let require_email_verification = config.require_email_verification;
-    let callback_url = body.callback_url.clone();
     let remember_me = body.remember_me;
     let duplicate_body = body.clone();
     let duplicate_config = config.clone();
-    let signup_context = AuthContext {
-        config: Arc::clone(&ctx.config),
-        database: Arc::clone(&ctx.database),
-        email_provider: ctx.email_provider.clone(),
-        metadata: ctx.metadata.clone(),
-        extensions: ctx.extensions.clone(),
-    };
+    let signup_context = ctx.clone();
 
-    alibi_core::store::transaction(database.as_ref(), move |tx| {
-        let _database = Arc::clone(&transaction_database);
+    let (response, cookies, created) = alibi_core::store::transaction(database.as_ref(), move |tx| {
         Box::pin(async move {
             let user = match tx
                 .create_user_with_source_record(
@@ -790,7 +786,8 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                         &duplicate_fields,
                         &duplicate_config,
                         &signup_context,
-                    );
+                    )
+                    .map(|(response, cookies)| (response, cookies, None));
                 }
                 Err(AuthError::Database(_) | AuthError::CallbackFailure(_)) => {
                     return Err(AuthError::UnprocessableEntity(
@@ -815,15 +812,6 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                     password: Some(password_hash.clone()),
                 })
                 .await?;
-
-            super::email_verification::send_signup_verification(
-                &user,
-                callback_url.as_deref(),
-                require_email_verification,
-                &signup_context,
-                tx,
-            )
-            .await?;
 
             if auto_sign_in {
                 let session = tx
@@ -878,6 +866,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                         )?,
                     },
                     Some(cookies),
+                    Some(user),
                 ))
             } else {
                 Ok((
@@ -888,11 +877,23 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                         )?,
                     },
                     None,
+                    Some(user),
                 ))
             }
         })
     })
-    .await
+    .await?;
+    // The verification email goes out once the new user is saved.
+    if let Some(user) = created {
+        super::email_verification::send_signup_verification(
+            &user,
+            body.callback_url.as_deref(),
+            config.require_email_verification,
+            ctx,
+        )
+        .await;
+    }
+    Ok((response, cookies))
 }
 
 async fn load_credential_password_hash(

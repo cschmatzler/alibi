@@ -1099,6 +1099,20 @@ pub(crate) mod test_store {
             });
             Ok(before - state.verifications.len())
         }
+
+        async fn delete_expired_verifications_by_identifier(
+            &self,
+            identifier: &str,
+        ) -> AuthResult<usize> {
+            let now = Utc::now();
+            let mut state = self.lock();
+            let before = state.verifications.len();
+            state.verifications.retain(|_, verification| {
+                verification.identifier != identifier
+                    || verification.expires_at.timestamp_millis() >= now.timestamp_millis()
+            });
+            Ok(before - state.verifications.len())
+        }
     }
 
     #[async_trait]

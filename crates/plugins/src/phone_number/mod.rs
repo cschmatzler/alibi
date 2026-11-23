@@ -199,17 +199,14 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for PhoneNumberPlugin 
         if call.path() != Some("/update-user") {
             return Ok(false);
         }
-        match call.body() {
-            Some(JsValue::Object(body)) => Ok(body
+        // The pinned JS matcher reads `ctx.body?.phoneNumber != null`, so a
+        // missing or primitive body reaches the endpoint's own validation.
+        Ok(match call.body() {
+            Some(JsValue::Object(body)) => body
                 .get("phoneNumber")
-                .is_some_and(|value| !value.is_null())),
-            Some(JsValue::Array(_) | JsValue::Date(_)) => Ok(false),
-            // The pinned JS matcher uses `"phoneNumber" in ctx.body`, which throws
-            // for missing and primitive bodies before endpoint validation.
-            _ => Err(alibi_core::AuthError::internal(
-                "Phone profile matcher requires an object",
-            )),
-        }
+                .is_some_and(|value| !matches!(value, JsValue::Null | JsValue::Undefined)),
+            _ => false,
+        })
     }
     async fn before(
         &self,

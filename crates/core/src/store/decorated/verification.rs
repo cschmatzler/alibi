@@ -74,6 +74,16 @@ impl<S: AuthSchema> VerificationStore<S> for PluginStore<S> {
             .get_latest_verification_by_identifier(identifier)
             .await
     }
+    async fn list_verifications_by_identifier(
+        &self,
+        identifier: &str,
+        limit: u32,
+        offset: u32,
+    ) -> AuthResult<Vec<S::Verification>> {
+        self.inner
+            .list_verifications_by_identifier(identifier, limit, offset)
+            .await
+    }
     async fn consume_verification_by_identifier(
         &self,
         identifier: &str,
@@ -106,5 +116,13 @@ impl<S: AuthSchema> VerificationStore<S> for PluginStore<S> {
     }
     async fn delete_expired_verifications(&self) -> AuthResult<usize> {
         self.inner.delete_expired_verifications().await
+    }
+    async fn delete_expired_verifications_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<usize> {
+        self.inner
+            .delete_expired_verifications_by_identifier(identifier)
+            .await
     }
 }

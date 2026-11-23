@@ -12,10 +12,13 @@ use std::collections::BTreeMap;
 
 backend_tests!(
     wallet_signature_consumes_the_issued_nonce_and_persists_identity,
-    registered_passkey_authenticates_from_stored_credential
+    siwe_signup_rolls_back_after_a_failed_account_insert,
+    registered_passkey_authenticates_from_stored_credential,
+    passkey_shared_rp_uses_exact_resolved_origins
 );
 postgres_tests!(
     wallet_signature_consumes_the_issued_nonce_and_persists_identity,
+    siwe_signup_rolls_back_after_a_failed_account_insert,
     registered_passkey_authenticates_from_stored_credential
 );
 
@@ -25,6 +28,137 @@ impl SiweNonceProvider for FixtureNonce {
     async fn get_nonce(&self) -> SiweCallbackResult<String> {
         Ok("GoldenNonce0001".into())
     }
+}
+
+// 23a60a31f makes new identity creation atomic through the last account insert.
+async fn siwe_signup_rolls_back_after_a_failed_account_insert<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(SiwePlugin::new(SiweConfig::new(
+            "fixture.example",
+            Arc::new(FixtureNonce),
+            Arc::new(Eip191Verifier),
+        )))
+        .build()
+        .await?;
+    if db.is_postgres() {
+        _ = db.execute("CREATE FUNCTION veto_siwe() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'SIWE account insert veto'; END $$", &[]).await?;
+        _ = db.execute("CREATE TRIGGER veto_siwe BEFORE INSERT ON \"account\" FOR EACH ROW EXECUTE FUNCTION veto_siwe()", &[]).await?;
+    } else {
+        _ = db.execute("CREATE TRIGGER veto_siwe BEFORE INSERT ON \"account\" BEGIN SELECT RAISE(FAIL, 'SIWE account insert veto'); END", &[]).await?;
+    }
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/siwe/eip191-noble-2.0.1.json"
+    ))?;
+    let input = request(
+        "/siwe/verify",
+        Some(json!({"message":fixture["message"],"signature":fixture["signature"]})),
+        "",
+    );
+    let _ = call(&auth, request("/siwe/nonce", Some(json!({})), ""), 200).await;
+    let rejected = call(&auth, input.clone(), 401).await;
+    assert_eq!(
+        body(&rejected),
+        json!({"message":"Something went wrong. Please try again later.","status":401})
+    );
+    for table in ["user", "walletAddress", "account", "session"] {
+        assert_eq!(db.count(table).await?, 0, "{table}");
+    }
+    _ = db
+        .execute(
+            if db.is_postgres() {
+                "DROP TRIGGER veto_siwe ON \"account\""
+            } else {
+                "DROP TRIGGER veto_siwe"
+            },
+            &[],
+        )
+        .await?;
+    let _ = call(&auth, request("/siwe/nonce", Some(json!({})), ""), 200).await;
+    let accepted = call(&auth, input, 200).await;
+    assert_eq!(body(&accepted)["user"]["walletAddress"], fixture["address"]);
+    for table in ["user", "walletAddress", "account", "session"] {
+        assert_eq!(db.count(table).await?, 1, "{table}");
+    }
+    B::close(connection).await
+}
+
+// 070d10139 distinguishes a resolved exact origin from a host the wildcard
+// alone admits, before dispatching to either ceremony's challenge verifier.
+async fn passkey_shared_rp_uses_exact_resolved_origins<B: Backend>(db: Db) -> TestResult {
+    use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
+
+    struct VouchedTenant;
+    #[async_trait]
+    impl TrustedOriginsResolver for VouchedTenant {
+        async fn resolve(&self, request: &AuthRequest) -> alibi::AuthResult<Vec<String>> {
+            const TENANT: &str = "https://tenant.example.test";
+            Ok(if request.url().is_some_and(|url| url.origin().ascii_serialization() == TENANT) {
+                vec![TENANT.into()]
+            } else {
+                Vec::new()
+            })
+        }
+    }
+
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .dynamic_base_url(DynamicBaseUrl {
+            allowed_hosts: vec!["exact.example.test".into(), "*.example.test".into()],
+            protocol: Some(BaseUrlProtocol::Https),
+            fallback: Some("https://fallback.example.test".into()),
+        })
+        .trusted_origin("https://frontend.example.test")
+        .trusted_origin("https://*.example.test")
+        .trusted_origins_resolver(VouchedTenant);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(PasskeyPlugin::new().rp_id("example.test").registration(
+            alibi::plugins::passkey::PasskeyRegistrationConfig {
+                require_session: false,
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let path = "/passkey/generate-authenticate-options";
+    let options = call(
+        &auth,
+        AuthRequest::new(HttpMethod::Get, format!("/api/auth{path}"))
+            .with_url(format!("https://exact.example.test/api/auth{path}").parse()?),
+        200,
+    )
+    .await;
+    assert_eq!(body(&options)["rpId"], "example.test");
+
+    for (reported, admitted) in [
+        ("https://exact.example.test", true),
+        ("https://fallback.example.test", true),
+        ("https://frontend.example.test", true),
+        ("https://tenant.example.test", true),
+        ("https://unlisted.example.test", false),
+    ] {
+        let client_data = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!({"origin":reported}))?);
+        for (path, failed_code) in [
+            ("/passkey/verify-registration", "FAILED_TO_VERIFY_REGISTRATION"),
+            ("/passkey/verify-authentication", "AUTHENTICATION_FAILED"),
+        ] {
+            let mut input = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"))
+                .with_url(format!("{reported}/api/auth{path}").parse()?);
+            _ = input.headers.insert("content-type".into(), "application/json".into());
+            input.body = Some(serde_json::to_vec(&json!({
+                "response": {"response": {"clientDataJSON":client_data}}
+            }))?);
+            let response = call(&auth, input, 400).await;
+            assert_eq!(
+                body(&response)["code"],
+                if admitted { "CHALLENGE_NOT_FOUND" } else { failed_code },
+                "{path}: {reported}"
+            );
+        }
+    }
+    B::close(connection).await
 }
 
 async fn wallet_signature_consumes_the_issued_nonce_and_persists_identity<B: Backend>(
@@ -246,7 +380,11 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
             vec![fixture["address"].as_str().unwrap().to_owned()]
         );
         if mode == "ens-error" {
-            assert_eq!(body(&response)["error"], "ENS unavailable");
+            // e64f62427 keeps the private ENS error out of the response.
+            assert_eq!(
+                body(&response),
+                json!({"message":"Something went wrong. Please try again later.","status":401})
+            );
             for table in ["user", "session", "account", "walletAddress"] {
                 assert_eq!(db.count(table).await?, 0);
             }

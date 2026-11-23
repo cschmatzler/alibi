@@ -91,7 +91,7 @@ compatScenario(
       expect(result.htm).toBe("post");
       expect(result.htu).toBe(url);
       expect(result.iat).toBe(2000000000);
-      expect(Date.parse(result.expiresAt)).toBe(2000000300000);
+      expect(Date.parse(result.expiresAt)).toBe(2000000301000);
       results.push({ alg, htu: result.htu });
     }
     const pq = JSON.parse(
@@ -288,7 +288,7 @@ compatScenario(
       if (replay !== "memory") {
         const stored = await control({ operation: "row", key: first.replayKey });
         expect(stored.value).toBe(first.replayKey);
-        expect(Date.parse(stored.expiresAt)).toBe(2000000300000);
+        expect(Date.parse(stored.expiresAt)).toBe(2000000301000);
       }
     }
     // A future manual clock does not override JOSE's real-clock exp validation.

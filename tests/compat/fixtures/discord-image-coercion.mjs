@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { discord } from "../reference-server/node_modules/@better-auth/core/dist/social-providers/index.mjs";
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/core/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
 const inputs = [];
 for (const [kind, id] of [
   ["absent", undefined], ["null", null], ["false", false], ["zero", 0], ["true", true],

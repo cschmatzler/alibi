@@ -7,6 +7,7 @@ pub(super) const PRIVATE_ENDPOINTS: &[&str] = &[
     "https://[fc00::1]/endpoint",
     "https://[::ffff:10.0.0.1]/endpoint",
     "https://[2001:db8::1]/endpoint",
+    "https://[64:ff9b:2::1]/endpoint",
 ];
 pub(super) fn private_error(field: &str, value: &str) -> serde_json::Value {
     let url = url::Url::parse(value).unwrap();

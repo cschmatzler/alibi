@@ -162,6 +162,9 @@ for (const cleanup of [true, false] as const) {
           const foreignId = other.data.user.id;
           expect((await owner.signOut()).error).toBeNull();
 
+          // b77e78341 throttles the global sweep. Prime it before creating the
+          // pending rows so d34e6b130's per-identifier cleanup is observable.
+          await control(ctx, profile, { action: "prime-cleanup" });
           const signIn = await owner.signIn.email({ email, password });
           expect(signIn.data).toMatchObject({ twoFactorRedirect: true });
 
@@ -256,7 +259,6 @@ for (const cleanup of [true, false] as const) {
           }
 
           let negative: unknown = null;
-          let delivery: unknown = null;
           let deliveredCode: string | null = null;
 
           if (mode === "expired") {
@@ -277,17 +279,21 @@ for (const cleanup of [true, false] as const) {
           if (kind === "otp") {
             await control(ctx, profile, { action: "arm" });
             const sent = await raw.twoFactor.sendOtp({}, { headers: { cookie: rawCookie } });
-            expect(sent.error).toBeNull();
-
-            delivery = await control(ctx, profile, {
-              action: "delivery",
-              email,
-            });
-            code = z.object({ otp: z.string() }).parse(delivery).otp;
-            deliveredCode = code;
-            expect((await state(ctx, profile)).receipts).toEqual(
-              cleanup ? ["lookup", "cleanup-read", "cleanup-delete", "user"] : ["lookup", "user"],
-            );
+            const afterSend = await state(ctx, profile);
+            const delivery = await control(ctx, profile, { action: "delivery", email });
+            if (mode === "expired") {
+              expect(sent.error).toMatchObject({ status: 401, code: "INVALID_TWO_FACTOR_COOKIE" });
+              expect(delivery).toBeNull();
+              expect(afterSend.receipts).toEqual(
+                cleanup ? ["lookup", "cleanup-read", "cleanup-delete"] : ["lookup"],
+              );
+              code = "000000";
+            } else {
+              expect(sent.error).toBeNull();
+              code = z.object({ otp: z.string() }).parse(delivery).otp;
+              deliveredCode = code;
+              expect(afterSend.receipts).toEqual(["lookup", "user"]);
+            }
           }
 
           const ghost = ctx.uniqueToken("missing-user");
@@ -318,25 +324,21 @@ for (const cleanup of [true, false] as const) {
           expect(rejected.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
 
           const after = await state(ctx, profile);
-          const expectedReceipts = cleanup
-            ? [
-                "lookup",
-                "cleanup-read",
-                "cleanup-delete",
-                ...(mode === "expired" && kind === "otp" ? [] : ["user"]),
-              ]
-            : ["lookup", "user"];
+          const expectedReceipts =
+            mode === "missing-user"
+              ? ["lookup", "user"]
+              : cleanup && (mode === "newest-expired" || kind !== "otp")
+                ? ["lookup", "cleanup-read", "cleanup-delete"]
+                : ["lookup"];
           expect(after.receipts).toEqual(expectedReceipts);
           expect(after.snapshot.verifications.some((row) => row.identifier === unrelated)).toBe(
-            !cleanup,
+            true,
           );
 
           const ownerFactorBefore = before.snapshot.factors.find((row) => row.userId === userId)!;
           const ownerFactorAfter = after.snapshot.factors.find((row) => row.userId === userId)!;
-          expect(ownerFactorAfter).toEqual({
-            ...ownerFactorBefore,
-            failedVerificationCount: mode === "expired" && kind === "otp" && !cleanup ? 0 : 3,
-          });
+          expect(ownerFactorBefore.failedVerificationCount).toBe(3);
+          expect(ownerFactorAfter).toEqual(ownerFactorBefore);
           expect(after.snapshot.factors.find((row) => row.userId === foreignId)).toEqual(
             before.snapshot.factors.find((row) => row.userId === foreignId),
           );
@@ -345,14 +347,14 @@ for (const cleanup of [true, false] as const) {
 
           if (mode === "expired") {
             expect(after.snapshot.verifications.some((row) => row.identifier === key)).toBe(
-              !cleanup && kind !== "otp",
+              !cleanup,
             );
             expect(
               after.snapshot.verifications.some((row) => row.identifier === `2fa-attempts-${key}`),
-            ).toBe(!cleanup && kind === "otp");
+            ).toBe(true);
             expect(
               after.snapshot.verifications.some((row) => row.identifier === `2fa-otp-${key}`),
-            ).toBe(cleanup && kind === "otp");
+            ).toBe(false);
           } else {
             expect(
               after.snapshot.verifications.find((row) => row.identifier === `2fa-attempts-${key}`)

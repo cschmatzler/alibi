@@ -20,11 +20,7 @@ pub(super) async fn extract<S: AuthSchema>(
     provider: &super::OAuthProviderPlugin,
     endpoint: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
-    let audience = format!(
-        "{}{}/oauth2/{endpoint}",
-        ctx.config.base_url.trim_end_matches('/'),
-        ctx.config.base_path
-    );
+    let audience = super::endpoint_url(ctx, &format!("/oauth2/{endpoint}"));
     extract_for_audience(body, req, ctx, provider, &audience).await
 }
 
@@ -81,7 +77,7 @@ pub(super) async fn extract_for_audience<S: AuthSchema>(
                 Err(error) => Err(super::endpoint_error_response(error)),
             });
         }
-        return super::assertion::verify(&body, ctx, provider, audience).await;
+        return super::assertion::verify(&body, ctx, provider, audience, req.physical_request()).await;
     }
     from_normalized(&body, req)
 }
@@ -262,7 +258,7 @@ fn header_denial(
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
     let response = super::clients::status_protocol_error(status, code, description)?;
     Ok(Err(if let Some(scheme) = scheme {
-        response.with_header("WWW-Authenticate", scheme)
+        super::clients::with_challenge(response, scheme)
     } else {
         response
     }))
@@ -328,7 +324,7 @@ impl Credentials {
             description,
         )?;
         Ok(if self.method == "client_secret_basic" {
-            response.with_header("WWW-Authenticate", "Basic")
+            super::clients::with_basic_challenge(response)
         } else {
             response
         })
@@ -371,11 +367,7 @@ impl Credentials {
                 .filter(|prefix| !prefix.is_empty())
             {
                 let Some(secret) = self.secret.strip_prefix(prefix) else {
-                    return Ok(Err(super::clients::status_protocol_error(
-                        401,
-                        "invalid_client",
-                        "invalid client_secret",
-                    )?));
+                    return Ok(Err(self.denied("invalid client_secret")?));
                 };
                 secret
             } else {

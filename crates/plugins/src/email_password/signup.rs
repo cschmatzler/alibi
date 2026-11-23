@@ -28,20 +28,25 @@ pub(super) async fn notify_existing(
     request: Option<&AuthRequest>,
     config: &EmailPasswordConfig,
     context: &AuthContext<impl AuthSchema>,
-) -> AuthResult<()> {
+) {
     let Some(callback) = config.on_existing_user_signup.clone() else {
-        return Ok(());
+        return;
     };
     let request = request.cloned();
-    super::super::authentication_helpers::run_owned_notification(
+    if let Err(error) = super::super::authentication_helpers::run_owned_notification(
         context,
         async move {
-            super::super::authentication_helpers::run_notification(callback(user, request)).await;
+            if let Err(error) = callback(user, request).await {
+                tracing::error!(%error, "Failed to run onExistingUserSignUp after sign-up");
+            }
             Ok(())
         },
-        context.config.awaited_notification_errors,
+        alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
     )
     .await
+    {
+        tracing::error!(%error, "Failed to run onExistingUserSignUp after sign-up");
+    }
 }
 
 pub(super) fn synthetic_response(

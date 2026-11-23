@@ -54,7 +54,9 @@ compatScenario(
     expect(await state()).toEqual(before);
     const revoked = await invoke(owner.headers);
     expect(revoked.result.value!.response).toEqual({ status: true });
-    expect(revoked.result.value!.headers["set-cookie"]).toBeUndefined();
+    expect(revoked.result.value!.headers["set-cookie"]).toMatch(
+      /better-auth[.]session_token=;[^,]*Max-Age=0/,
+    );
     const after = await state();
     expect(after.owner.sessions).toEqual([]);
     expect(after.owner.user).toEqual(before.owner.user);

@@ -194,7 +194,8 @@ const cases: Array<{
     name: "embedded IPv4 retains full published IPv6 representation",
     profile: "client-ip-full",
     headers: { "x-forwarded-for": "2001:db8::192.0.2.1" },
-    ip: "2001:0db8:0000:0000:0000:0000:0000:192.0.2.1",
+    // Better Auth #12692 canonicalizes the dotted IPv4 tail into two IPv6 groups.
+    ip: "2001:0db8:0000:0000:0000:0000:c000:0201",
   },
 ];
 

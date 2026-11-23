@@ -522,6 +522,14 @@ for (const mode of ["plain", "no-cleanup", "limit"] as const) {
       const other = await foreign(ctx);
       await configure(ctx);
       const identifier = "cleanup-newest-owner";
+      // Better Auth #12593 throttles full sweeps. Prime that window before seeding
+      // so #12626's identifier-specific cleanup is deterministic.
+      const prime = await call(ctx, {
+        operation: "find",
+        profile: profile(mode),
+        identifier: "cleanup-prime",
+      });
+      expect(prime).toMatchObject({ status: 200, body: null });
       const seeds = [];
 
       for (let index = 0; index < 4; index++) {
@@ -546,12 +554,22 @@ for (const mode of ["plain", "no-cleanup", "limit"] as const) {
 
       const after = await state(ctx);
       unchanged(other, after);
-      expect(after.verifications).toHaveLength(mode === "no-cleanup" ? 4 : 0);
-      expect(after.events.filter((row) => row.stage === "delete-before")).toHaveLength(
-        mode === "no-cleanup" ? 0 : mode === "limit" ? 2 : 4,
+      expect(after.verifications).toEqual(
+        mode === "no-cleanup"
+          ? before.verifications
+          : before.verifications.filter((row) => row.identifier !== identifier),
       );
+      expect(after.events.filter((row) => row.stage === "delete-before")).toHaveLength(
+        mode === "no-cleanup" ? 0 : 2,
+      );
+      const repeated = await call(ctx, { operation: "find", profile: profile(mode), identifier });
+      expect(repeated).toMatchObject({
+        status: 200,
+        body: mode === "no-cleanup" ? seeds[1]!.body : null,
+      });
+      expect(await state(ctx)).toEqual(after);
 
-      return observed({ foreign: other, seeds, before, found, after });
+      return observed({ foreign: other, seeds, before, found, after, repeated });
     },
   );
 }

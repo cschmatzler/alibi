@@ -950,7 +950,8 @@ compatScenario(
     }
 
     const noBody = await raw(ctx, "role-validation-owner", profile, "/organization/create-role");
-    expect(noBody.status).toBe(415);
+    // Better Auth #12805 sends bodyless POSTs through endpoint validation.
+    expect(noBody).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR" } });
 
     invalidCreates.push(noBody);
 

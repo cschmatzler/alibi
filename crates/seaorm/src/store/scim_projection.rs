@@ -13,8 +13,52 @@ use alibi_core::{
 };
 use chrono::SubsecRound;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, QuerySelect, sea_query::Expr,
+    ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, QuerySelect, Select,
+    sea_query::Expr,
 };
+/// Ids per `IN` list, like the reference's `chunkSCIMIds`; stays under legacy SQLite's 999 bound values.
+pub(super) const SCIM_ID_CHUNK_SIZE: usize = 500;
+/// Reads every row matching one `IN` predicate per id chunk. A bounded read caps each chunk at
+/// its length (the reference's `limit: chunk.length`); otherwise no limit applies, matching its
+/// `SCIM_UNBOUNDED_ROW_LIMIT` reads that bypass `defaultFindManyLimit`.
+pub(super) async fn find_scim_chunks<E: EntityTrait, C: ConnectionTrait>(
+    db: &C,
+    ids: &[String],
+    bounded: bool,
+    query: impl Fn(&[String]) -> Select<E>,
+) -> AuthResult<Vec<E::Model>> {
+    let mut rows = Vec::new();
+    for chunk in ids.chunks(SCIM_ID_CHUNK_SIZE) {
+        let mut select = query(chunk);
+        if bounded {
+            select = select.limit(
+                u64::try_from(chunk.len())
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+            );
+        }
+        rows.extend(select.all(db).await.map_err(map_db_err)?);
+    }
+    Ok(rows)
+}
+/// Connections among `connections` whose binding is no longer active.
+pub(super) async fn retired_scim_connections<C: ConnectionTrait>(
+    db: &C,
+    connections: impl IntoIterator<Item = String>,
+) -> AuthResult<std::collections::HashSet<String>> {
+    let connections = connections
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    Ok(find_scim_chunks(db, &connections, true, |chunk| {
+        binding::Entity::find().filter(binding::Column::ConnectionId.is_in(chunk.iter().cloned()))
+    })
+    .await?
+    .into_iter()
+    .filter(|binding| binding.decommission_status != "active")
+    .map(|binding| binding.connection_id)
+    .collect())
+}
 impl<S: AuthSchema> SeaOrmStore<S> {
     pub(super) async fn scim_projection_user_ids_with_connection<C: ConnectionTrait>(
         &self,
@@ -26,15 +70,12 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
-        let requested = user::Entity::find()
-            .filter(user::Column::Id.is_in(ids.iter().cloned()))
-            .filter(user::Column::ProvisioningDomainId.eq(domain))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?;
+        let requested = find_scim_chunks(db, ids, true, |chunk| {
+            user::Entity::find()
+                .filter(user::Column::Id.is_in(chunk.iter().cloned()))
+                .filter(user::Column::ProvisioningDomainId.eq(domain))
+        })
+        .await?;
         let mut user_ids = Vec::new();
         for id in ids {
             if let Some(user) = requested.iter().find(|user| user.id == *id)
@@ -49,12 +90,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         if lock {
             let mut sorted = user_ids.clone();
             sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
-            let subjects = subject::Entity::find()
-                .filter(subject::Column::UserId.is_in(sorted.iter().cloned()))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?;
+            let subjects = find_scim_chunks(db, &sorted, true, |chunk| {
+                subject::Entity::find().filter(subject::Column::UserId.is_in(chunk.iter().cloned()))
+            })
+            .await?;
             if subjects.len() != sorted.len() {
                 return Err(AuthError::internal(
                     "A SCIM User selected for projection has no subject aggregate.",
@@ -127,65 +166,45 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
-        let users = user::Entity::find()
-            .filter(user::Column::UserId.is_in(user_ids.iter().cloned()))
-            .filter(user::Column::ProvisioningDomainId.eq(domain))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?;
-        let connections = users
-            .iter()
-            .map(|user| user.connection_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let retired = binding::Entity::find()
-            .filter(binding::Column::ConnectionId.is_in(connections))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?
-            .into_iter()
-            .filter(|binding| binding.decommission_status != "active")
-            .map(|binding| binding.connection_id)
-            .collect::<std::collections::HashSet<_>>();
-        let grants = grant::Entity::find()
-            .filter(grant::Column::UserId.is_in(user_ids.iter().cloned()))
-            .filter(grant::Column::ProvisioningDomainId.eq(domain))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?;
+        let users = find_scim_chunks(db, &user_ids, false, |chunk| {
+            user::Entity::find()
+                .filter(user::Column::UserId.is_in(chunk.iter().cloned()))
+                .filter(user::Column::ProvisioningDomainId.eq(domain))
+        })
+        .await?;
+        let retired =
+            retired_scim_connections(db, users.iter().map(|user| user.connection_id.clone()))
+                .await?;
+        let grants = find_scim_chunks(db, &user_ids, false, |chunk| {
+            grant::Entity::find()
+                .filter(grant::Column::UserId.is_in(chunk.iter().cloned()))
+                .filter(grant::Column::ProvisioningDomainId.eq(domain))
+        })
+        .await?;
         let active_ids = users
             .iter()
             .filter(|user| user.active && !retired.contains(&user.connection_id))
             .map(|user| user.id.clone())
             .collect::<Vec<_>>();
-        let memberships = if roles && !active_ids.is_empty() {
-            membership::Entity::find()
-                .filter(membership::Column::ScimUserId.is_in(active_ids))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?
+        let memberships = if roles {
+            find_scim_chunks(db, &active_ids, false, |chunk| {
+                membership::Entity::find()
+                    .filter(membership::Column::ScimUserId.is_in(chunk.iter().cloned()))
+            })
+            .await?
         } else {
             Vec::new()
         };
         let group_ids = memberships
             .iter()
             .map(|member| member.group_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let groups = if group_ids.is_empty() {
-            Vec::new()
-        } else {
-            group::Entity::find()
-                .filter(group::Column::Id.is_in(group_ids))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?
-        };
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let groups = find_scim_chunks(db, &group_ids, true, |chunk| {
+            group::Entity::find().filter(group::Column::Id.is_in(chunk.iter().cloned()))
+        })
+        .await?;
         user_ids
             .into_iter()
             .map(|user_id| -> AuthResult<ScimProjectionPreparedUser> {
@@ -294,16 +313,15 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         user_id: &str,
         ids: &[String],
     ) -> AuthResult<()> {
-        if ids.is_empty() {
-            return Ok(());
+        for chunk in ids.chunks(SCIM_ID_CHUNK_SIZE) {
+            _ = grant::Entity::delete_many()
+                .filter(grant::Column::Id.is_in(chunk.iter().cloned()))
+                .filter(grant::Column::UserId.eq(user_id))
+                .filter(grant::Column::ProvisioningDomainId.eq(domain))
+                .exec(db)
+                .await
+                .map_err(map_db_err)?;
         }
-        _ = grant::Entity::delete_many()
-            .filter(grant::Column::Id.is_in(ids.iter().cloned()))
-            .filter(grant::Column::UserId.eq(user_id))
-            .filter(grant::Column::ProvisioningDomainId.eq(domain))
-            .exec(db)
-            .await
-            .map_err(map_db_err)?;
         Ok(())
     }
 }

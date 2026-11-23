@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { passkey } from "../reference-server/node_modules/@better-auth/passkey/dist/index.mjs";
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/passkey/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/passkey/package.json", import.meta.url))).version, "1.7.27");
 const cases = [];
 for (const [mode, name, context, resolved = { id: "owner", name: "Owner" }] of [
   ["absent", undefined, undefined], ["empty", "", ""], ["spaces", " \ufeff ", " \u3000 "],
@@ -49,5 +49,5 @@ for (const [mode, name, context, resolved = { id: "owner", name: "Owner" }] of [
 }
 assert.equal(cases.length, 13);
 assert.equal(cases.filter(row => row.error).length, 4);
-await writeFile(new URL("../../../crates/plugins/src/passkey/generation_query_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/plugins/src/passkey/generation_query_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual passkey generation query endpoint cases`);

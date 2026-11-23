@@ -14,7 +14,6 @@ use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -26,7 +25,13 @@ use std::time::Duration;
 pub struct GenericOAuthConfig {
     pub provider: OAuthProvider,
     pub discovery_url: Option<String>,
+    /// Sent on the discovery request, and on the JWKS request when `jwks_uri`
+    /// has the discovery URL's origin. When set, discovery follows redirects
+    /// only within that origin and fails on a redirect to another origin.
     pub discovery_headers: Vec<(String, String)>,
+    /// Sent on token endpoint requests: the authorization code exchange and
+    /// token refresh. Client authentication replaces a same-named header.
+    pub authorization_headers: Vec<(String, String)>,
     /// `None` permits discovery; `Some`, including empty, retains the override.
     pub authorization_url: Option<String>,
     pub token_url: Option<String>,
@@ -98,6 +103,7 @@ impl GenericOAuthConfig {
                 map_user_info: None,
                 get_user_info: None,
                 refresh_access_token: None,
+                get_account_fields: None,
                 verify_id_token: None,
                 id_token: None,
                 disable_id_token_sign_in: false,
@@ -108,6 +114,7 @@ impl GenericOAuthConfig {
             },
             discovery_url: None,
             discovery_headers: Vec::new(),
+            authorization_headers: Vec::new(),
             authorization_url: None,
             token_url: None,
             user_info_url: None,
@@ -178,8 +185,13 @@ impl GenericOAuthConfig {
                     return Ok(None);
                 };
                 metadata.jwks_url = Some(url.to_string());
+                // The JWKS fetch refuses redirects, so these headers stay on the discovery origin.
+                let mut keys = HttpOAuthJwksSource::new(url.to_string());
+                if url.origin() == base.origin() {
+                    keys = keys.with_headers(self.discovery_headers.clone());
+                }
                 self.provider.verify_id_token = Some(Arc::new(DiscoveryVerifier {
-                    keys: Arc::new(HttpOAuthJwksSource::new(url.to_string())),
+                    keys: Arc::new(keys),
                     issuer: issuer.clone(),
                     audience: self.provider.client_id.clone(),
                     algorithms: is_oidc.then(|| metadata.signing_algorithms.clone()),
@@ -197,6 +209,12 @@ impl GenericOAuthConfig {
         }
         policy.allow_missing_access_token = true;
         policy.default_access_token_expires_in = self.access_token_expires_in;
+        policy
+            .authorization_code_headers
+            .extend(self.authorization_headers.iter().cloned());
+        policy
+            .refresh_token_headers
+            .extend(std::mem::take(&mut self.authorization_headers));
         if self.discovery_url.is_some()
             && (self.authorization_url.as_ref().is_none_or(String::is_empty)
                 || self.token_url.as_ref().is_none_or(String::is_empty)
@@ -277,8 +295,6 @@ const DISCOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) struct DeferredDiscovery {
     config: GenericOAuthConfig,
     provider: OnceLock<OAuthProvider>,
-    attempts: AtomicU64,
-    attempt: tokio::sync::Mutex<()>,
 }
 impl Clone for DeferredDiscovery {
     fn clone(&self) -> Self {
@@ -294,18 +310,13 @@ impl DeferredDiscovery {
         Self {
             config,
             provider: OnceLock::new(),
-            attempts: AtomicU64::new(0),
-            attempt: tokio::sync::Mutex::new(()),
         }
     }
     pub(crate) fn provider(&self) -> Option<&OAuthProvider> {
         self.provider.get()
     }
     pub(crate) async fn retry(&self) {
-        let seen = self.attempts.load(Ordering::SeqCst);
-        let _attempt = self.attempt.lock().await;
-        // A request that waited on another request's attempt shares its outcome.
-        if self.provider.get().is_some() || self.attempts.load(Ordering::SeqCst) != seen {
+        if self.provider.get().is_some() {
             return;
         }
         if let Ok(Some(resolved)) = self
@@ -316,39 +327,90 @@ impl DeferredDiscovery {
         {
             _ = self.provider.set(resolved.provider);
         }
-        _ = self.attempts.fetch_add(1, Ordering::SeqCst);
     }
 }
 fn string(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(Into::into)
 }
+/// Redirects followed within the discovery origin when `discoveryHeaders` are set.
+const MAX_DISCOVERY_REDIRECTS: usize = 5;
+
 async fn fetch_discovery(
     url: &str,
     headers: &[(String, String)],
     timeout: Option<Duration>,
 ) -> Option<Value> {
-    let mut request = reqwest::Client::new().get(url);
-    if let Some(timeout) = timeout {
-        request = request.timeout(timeout);
+    let response = if headers.is_empty() {
+        let mut request = reqwest::Client::new().get(url);
+        if let Some(timeout) = timeout {
+            request = request.timeout(timeout);
+        }
+        request.send().await.ok()?
+    } else {
+        fetch_discovery_on_origin(url, headers, timeout).await?
+    };
+    if !response.status().is_success() {
+        return None;
     }
-    for (key, value) in headers {
-        request = request.header(key, value);
-    }
-    let document: Value = request
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .profile_json()
-        .await
-        .ok()?;
+    let document: Value = response.profile_json().await.ok()?;
     if let Some(issuer) = string(&document, "issuer").filter(|issuer| !issuer.is_empty())
         && url::Url::parse(&issuer).is_err()
     {
         return None;
     }
     Some(document)
+}
+
+/// An HTTP client forwards custom headers across cross-origin redirects, so
+/// redirects are followed here, and only within the configured origin.
+async fn fetch_discovery_on_origin(
+    url: &str,
+    headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Option<reqwest::Response> {
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .ok()?;
+    let mut target = url::Url::parse(url).ok()?;
+    let origin = target.origin();
+    let deadline = timeout.map(|timeout| tokio::time::Instant::now() + timeout);
+    for hop in 0..=MAX_DISCOVERY_REDIRECTS {
+        let mut request = client.get(target.clone());
+        if let Some(deadline) = deadline {
+            request =
+                request.timeout(deadline.saturating_duration_since(tokio::time::Instant::now()));
+        }
+        for (key, value) in headers {
+            request = request.header(key, value);
+        }
+        let response = request.send().await.ok()?;
+        if !response.status().is_redirection() {
+            return Some(response);
+        }
+        // A redirect without a usable target is a failed discovery response.
+        let location = response
+            .headers()
+            .get(reqwest::header::LOCATION)?
+            .to_str()
+            .ok()?;
+        let next = target.join(location).ok()?;
+        if next.origin() != origin {
+            tracing::error!(
+                "discovery redirected to {}; with discoveryHeaders set, only same-origin redirects are followed. Set discoveryUrl to the final URL.",
+                next.origin().ascii_serialization()
+            );
+            return None;
+        }
+        if hop >= MAX_DISCOVERY_REDIRECTS {
+            tracing::error!(
+                "discovery redirected more than {MAX_DISCOVERY_REDIRECTS} times. Set discoveryUrl to the final URL."
+            );
+            return None;
+        }
+        target = next;
+    }
+    None
 }
 fn oauth_subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
@@ -1050,6 +1112,201 @@ mod tests {
                 );
             }
         }
+    }
+
+    type Route = Arc<dyn Fn(&str) -> (u16, Option<String>, String) + Send + Sync>;
+
+    async fn request_head(stream: &mut tokio::net::TcpStream) -> String {
+        use tokio::io::AsyncReadExt as _;
+        let mut head = Vec::new();
+        while !head.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+            let mut buffer = [0; 1024];
+            let count = stream.read(&mut buffer).await.unwrap_or(0);
+            if count == 0 {
+                break;
+            }
+            head.extend_from_slice(&buffer[..count]);
+        }
+        String::from_utf8_lossy(&head).to_ascii_lowercase()
+    }
+
+    /// Serves `route` and records each request head.
+    async fn recording_server(
+        route: impl Fn(&str, &str) -> (u16, Option<String>, String) + Send + Sync + 'static,
+    ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        use tokio::io::AsyncWriteExt as _;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        let origin = base.clone();
+        let route: Route = Arc::new(move |path| route(&origin, path));
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let head = request_head(&mut stream).await;
+                recorded.lock().unwrap().push(head.clone());
+                let path = head.split(' ').nth(1).unwrap_or("/").to_owned();
+                let (status, location, body) = route(&path);
+                let location = location
+                    .map(|location| format!("Location: {location}\r\n"))
+                    .unwrap_or_default();
+                _ = stream
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 {status} Test\r\n{location}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .await;
+            }
+        });
+        (base, requests)
+    }
+
+    fn document(issuer: &str, jwks: &str) -> String {
+        crate::oauth::providers::js!({
+            "issuer": issuer,
+            "authorization_endpoint": format!("{issuer}/authorize"),
+            "token_endpoint": format!("{issuer}/token"),
+            "jwks_uri": jwks,
+            "id_token_signing_alg_values_supported": ["RS256"],
+        })
+        .to_string()
+    }
+
+    fn with_header(requests: &std::sync::Mutex<Vec<String>>, path: &str) -> Vec<bool> {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|head| head.starts_with(&format!("get {path} ")))
+            .map(|head| head.contains("x-discovery: configured"))
+            .collect()
+    }
+
+    async fn resolve_with_headers(discovery_url: String) -> Option<OAuthProvider> {
+        let mut config = GenericOAuthConfig::new("client", "secret");
+        config.discovery_url = Some(discovery_url);
+        config.discovery_headers = vec![("X-Discovery".into(), "configured".into())];
+        config.resolve().await.unwrap().map(|resolved| resolved.provider)
+    }
+
+    // Upstream: plugins/generic-oauth/generic-oauth.test.ts (#12179).
+    #[tokio::test]
+    async fn discovery_headers_reach_same_origin_keys_only() {
+        // A signed-looking token whose header lets the verifier fetch the keys.
+        let token = format!(
+            "{}.e30.signature",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256"}"#)
+        );
+        let (other, other_requests) =
+            recording_server(|_, _| (200, None, r#"{"keys":[]}"#.into())).await;
+        for cross_origin in [false, true] {
+            let jwks = if cross_origin {
+                format!("{other}/keys")
+            } else {
+                "/keys".into()
+            };
+            let (base, requests) = recording_server(move |origin, path| match path {
+                "/.well-known/openid-configuration" => (200, None, document(origin, &jwks)),
+                _ => (200, None, r#"{"keys":[]}"#.into()),
+            })
+            .await;
+            let provider =
+                resolve_with_headers(format!("{base}/.well-known/openid-configuration"))
+                    .await
+                    .unwrap();
+            assert_eq!(
+                with_header(&requests, "/.well-known/openid-configuration"),
+                [true]
+            );
+            assert!(
+                !provider
+                    .verify_id_token
+                    .as_ref()
+                    .unwrap()
+                    .verify_id_token(&token, None)
+                    .await
+                    .unwrap()
+            );
+            if cross_origin {
+                assert_eq!(with_header(&other_requests, "/keys"), [false]);
+            } else {
+                assert_eq!(with_header(&requests, "/keys"), [true]);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_headers_follow_redirects_only_within_the_discovery_origin() {
+        let (other, other_requests) = recording_server(|origin, _| {
+            (200, None, document(origin, "/keys"))
+        })
+        .await;
+        let (base, requests) = recording_server(move |origin, path| match path {
+            "/start" => (302, Some("/next".into()), String::new()),
+            "/next" => (307, Some(format!("{origin}/final")), String::new()),
+            "/final" => (200, None, document(origin, "/keys")),
+            "/away" => (302, Some(format!("{other}/final")), String::new()),
+            "/loop" => (302, Some("/loop".into()), String::new()),
+            _ => (404, None, String::new()),
+        })
+        .await;
+        assert!(resolve_with_headers(format!("{base}/start")).await.is_some());
+        assert_eq!(with_header(&requests, "/final"), [true]);
+
+        assert!(resolve_with_headers(format!("{base}/away")).await.is_none());
+        assert!(other_requests.lock().unwrap().is_empty());
+
+        assert!(resolve_with_headers(format!("{base}/loop")).await.is_none());
+        assert_eq!(with_header(&requests, "/loop").len(), MAX_DISCOVERY_REDIRECTS + 1);
+    }
+
+    // Upstream #12395 allows a second request to recover while the first is waiting.
+    #[tokio::test]
+    async fn deferred_discovery_retries_independently_and_keeps_the_first_success() {
+        use tokio::io::AsyncWriteExt as _;
+        use tokio::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let mut config = GenericOAuthConfig::new("client", "secret");
+        config.discovery_url = Some(format!("{origin}/discovery"));
+        let deferred = Arc::new(DeferredDiscovery::new(config));
+        let first_attempt = {
+            let deferred = deferred.clone();
+            tokio::spawn(async move { deferred.retry().await })
+        };
+        tokio::time::timeout(Duration::from_secs(3), async {
+            let (mut first, _) = listener.accept().await.unwrap();
+            assert!(request_head(&mut first).await.starts_with("get /discovery "));
+            let respond = async {
+                let (mut second, _) = listener.accept().await.unwrap();
+                assert!(request_head(&mut second).await.starts_with("get /discovery "));
+                let body = document(&origin, "/keys");
+                second.write_all(format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                ).as_bytes()).await.unwrap();
+                second.shutdown().await.unwrap();
+            };
+            tokio::join!(deferred.retry(), respond);
+            assert_eq!(deferred.provider().unwrap().auth_url, format!("{origin}/authorize"));
+            assert!(!first_attempt.is_finished());
+            let body = document(&origin, "/keys").replace("/authorize", "/late-authorize");
+            first.write_all(format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ).as_bytes()).await.unwrap();
+            first.shutdown().await.unwrap();
+            first_attempt.await.unwrap();
+            assert_eq!(deferred.provider().unwrap().auth_url, format!("{origin}/authorize"));
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

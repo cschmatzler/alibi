@@ -116,7 +116,9 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         }
-        if req.physical_request().is_none() {
+        let headers = req.physical_request().map(|request| &request.headers)
+            .or_else(|| req.endpoint_call().and_then(alibi_core::endpoint::EndpointCall::headers));
+        if headers.is_none() {
             return super::clients::status_protocol_error(
                 401,
                 "invalid_request",
@@ -260,6 +262,8 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
         settings: AuthorizationSettings,
     ) -> AuthResult<EndpointResponse> {
+        let headers = req.physical_request()
+            .map_or_else(|| req.session_headers(), |request| &request.headers);
         let AuthorizationAdmission {
             mut query,
             validation,
@@ -278,11 +282,7 @@ impl OAuthProviderPlugin {
         let redirect_uri = text("redirect_uri");
         let response_type = text("response_type");
         let state = text("state");
-        let server_error = format!(
-            "{}{}/error",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path
-        );
+        let server_error = server_error_page(ctx);
         if reserved_error.is_none()
             && response_type == "code"
             && validation.as_ref().is_ok_and(|parameters| {
@@ -326,14 +326,19 @@ impl OAuthProviderPlugin {
         // Early request/schema errors can trust an enabled client without grant
         // admission. Valid requests reach the operator only after that admission.
         // Keep one decision for both the error channel and eventual code binding.
-        let trusted = if let Some(client) = client.as_ref().filter(|client| {
+        let (transport_allowed, trusted) = if let Some(client) = client.as_ref().filter(|client| {
             client.metadata.get("disabled") != Some(&json!(true))
                 && (error_only || authorization_code_allowed)
         }) {
-            self.authorization_redirect_is_trusted(&client.metadata, &redirect_uri)
-                .await?
+            let transport_allowed = self.redirect_uri_transport_allowed(
+                &redirect_uri,
+                client.metadata.get("application_type").and_then(Value::as_str) == Some("web"),
+            );
+            let trusted = transport_allowed
+                && self.authorization_redirect_matches(&client.metadata, &redirect_uri).await?;
+            (transport_allowed, trusted)
         } else {
-            false
+            (false, false)
         };
         let issuer = self
             .metadata(ctx)?
@@ -420,6 +425,19 @@ impl OAuthProviderPlugin {
                 )?,
             );
         }
+        if !redirect_uri.is_empty() && !transport_allowed
+        {
+            return browser_redirect(
+                req,
+                &error_url(
+                    &server_error,
+                    "invalid_request",
+                    alibi_core::utils::redirect_uri::INSECURE_REDIRECT_URI,
+                    None,
+                    None,
+                )?,
+            );
+        }
         if !trusted {
             return browser_redirect(
                 req,
@@ -458,6 +476,12 @@ impl OAuthProviderPlugin {
                 "invalid_scope",
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
+        }
+        if self.config.require_openid
+            && !query.get("scope").and_then(Value::as_str)
+                .is_some_and(|scope| scope.split(' ').any(|scope| scope == "openid"))
+        {
+            return admission_error("invalid_scope", "the openid scope is required");
         }
         let requested_user_info_claims = if let Some(claims) = query.get("claims") {
             if !requested.contains(&"openid") {
@@ -576,10 +600,7 @@ impl OAuthProviderPlugin {
             if selection
                 .should_redirect
                 .should_redirect(super::OAuthInteractionContext {
-                    headers: &req
-                        .physical_request()
-                        .ok_or_else(|| AuthError::internal("request not found"))?
-                        .headers,
+                    headers,
                     user: &user,
                     session,
                     scopes: &scopes,
@@ -621,11 +642,7 @@ impl OAuthProviderPlugin {
                 .collect::<Vec<_>>();
             let decision = policy
                 .should_redirect(super::OAuthSignupContext {
-                    // authorize_flow has already required a physical request.
-                    headers: &req
-                        .physical_request()
-                        .ok_or_else(|| AuthError::internal("request not found"))?
-                        .headers,
+                    headers,
                     user: &user,
                     session,
                     scopes: &scopes,
@@ -668,10 +685,7 @@ impl OAuthProviderPlugin {
             if post_login
                 .should_redirect
                 .should_redirect(super::OAuthPostLoginContext {
-                    headers: &req
-                        .physical_request()
-                        .ok_or_else(|| AuthError::internal("request not found"))?
-                        .headers,
+                    headers,
                     user: &user,
                     session,
                     scopes: &scopes,
@@ -897,7 +911,21 @@ impl OAuthProviderPlugin {
             .and_then(|selection| selection.page.as_deref())
             .or(self.config.select_account_page.as_deref())
     }
-    async fn authorization_redirect_is_trusted(
+    pub(super) async fn authorization_redirect_is_trusted(
+        &self,
+        metadata: &Value,
+        requested: &str,
+    ) -> AuthResult<bool> {
+        if !self.redirect_uri_transport_allowed(
+            requested,
+            metadata.get("application_type").and_then(Value::as_str) == Some("web"),
+        ) {
+            return Ok(false);
+        }
+        self.authorization_redirect_matches(metadata, requested).await
+    }
+
+    async fn authorization_redirect_matches(
         &self,
         metadata: &Value,
         requested: &str,
@@ -908,8 +936,8 @@ impl OAuthProviderPlugin {
         };
         // SafeUrlSchema validates a JS-trimmed value, but the subsequent URL
         // constructor and the operator still receive the original parameter.
-        if !super::clients::safe_uri_issues(alibi_core::utils::javascript::trim(requested))
-            .is_empty()
+        if !alibi_core::utils::redirect_uri::syntax_issue(alibi_core::utils::javascript::trim(requested))
+            .is_none()
         {
             return Ok(false);
         }
@@ -1169,7 +1197,7 @@ fn authorization_parameters(
             }
             "redirect_uri" => {
                 let text = alibi_core::utils::javascript::trim(text);
-                if let Some(issue) = super::clients::safe_uri_issues(text).into_iter().next() {
+                if let Some(issue) = alibi_core::utils::redirect_uri::syntax_issue(text) {
                     return Err(invalid(format!("redirect_uri: {issue}")));
                 }
                 parameters.redirect_uri = Some(text.into());
@@ -1300,7 +1328,7 @@ fn registered_redirect(metadata: &Value, requested: &str) -> bool {
     let Ok(parsed) = url::Url::parse(requested) else {
         return false;
     };
-    if requested.contains('#')
+    if alibi_core::utils::redirect_uri::syntax_issue(requested).is_some()
         || !parsed.username().is_empty()
         || parsed
             .password()
@@ -1308,7 +1336,13 @@ fn registered_redirect(metadata: &Value, requested: &str) -> bool {
     {
         return false;
     }
-    let requested_without_port = loopback_without_port(requested);
+    let requested_without_port = if metadata.get("application_type").and_then(Value::as_str)
+        == Some("web")
+    {
+        None
+    } else {
+        loopback_without_port(requested)
+    };
     metadata
         .get("redirect_uris")
         .and_then(Value::as_array)
@@ -1386,7 +1420,12 @@ fn fragment_error_url(
     format!("{target}#{}", params.finish())
 }
 
-fn error_url(
+pub(super) fn server_error_page(ctx: &AuthContext<impl AuthSchema>) -> String {
+    ctx.config.api_error_url.as_deref().filter(|url| !url.is_empty())
+        .map_or_else(|| super::endpoint_url(ctx, "/error"), str::to_owned)
+}
+
+pub(super) fn error_url(
     target: &str,
     error: &str,
     description: &str,
@@ -1475,11 +1514,11 @@ pub(super) fn verify_authorization_query(query: &str, secret: &str) -> AuthResul
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|_| AuthError::internal("Invalid authorization signing key"))?;
     mac.update(encode_pairs(&canonical).as_bytes());
-    let Ok(signature) = base64::engine::general_purpose::STANDARD.decode(signature_text) else {
+    let normalized = signature_text.trim_end_matches('=')
+        .replace(['+', ' '], "-")
+        .replace('/', "_");
+    let Ok(signature) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(normalized) else {
         return Ok(false);
     };
-    if base64::engine::general_purpose::STANDARD.encode(&signature) != *signature_text {
-        return Ok(false);
-    }
     Ok(mac.verify_slice(&signature).is_ok())
 }

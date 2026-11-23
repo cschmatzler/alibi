@@ -414,7 +414,7 @@ mod tests {
             assert_eq!(observed.0.lock().unwrap().len(), 1);
             assert_eq!(writes(&db).await, i64::from(!deferred));
             observed.0.lock().unwrap().clear();
-            let expired = age(&auth, &db, &token, true).await;
+            _ = age(&auth, &db, &token, true).await;
             let response_3 = auth
                 .handle_request(request("/get-session", &cookie))
                 .await
@@ -422,32 +422,20 @@ mod tests {
             let body_2: Value = serde_json::from_slice(&response_3.body).unwrap();
             assert_eq!(response_3.status, 200);
             assert_eq!(body_2, Value::Null);
-            let claims_3 =
-                verified(&jwt, &auth, response_3.headers.get("set-auth-jwt").unwrap()).await;
-            assert_eq!(
-                (*(*(*(claims_3).get("snapshot").unwrap_or(&Value::Null))
-                    .get("session")
-                    .unwrap_or(&Value::Null))
-                .get("expiresAt")
-                .unwrap_or(&Value::Null)),
-                (*(expired)
-                    .get("expiresAt")
-                    .expect("fixture contains the requested index"))
-            );
-            assert_eq!((*(claims_3).get("sub").unwrap_or(&Value::Null)), user_id);
-            assert_eq!(observed.0.lock().unwrap().len(), 1);
+            assert!(response_3.headers.get("set-auth-jwt").is_none());
+            assert!(observed.0.lock().unwrap().is_empty());
             assert_eq!(response_3.headers.get_all("set-cookie").count(), 3);
             assert_eq!(
                 auth.store().get_session(&token).await.unwrap().is_some(),
                 deferred
             );
-            // The endpoint's normal middleware still rejects the same expired proof.
             let response_4 = auth
                 .handle_request(request("/token", &cookie))
                 .await
                 .unwrap();
             assert_eq!(response_4.status, 401);
-            assert_eq!(observed.0.lock().unwrap().len(), 1);
+            assert!(response_4.headers.get("set-auth-jwt").is_none());
+            assert!(observed.0.lock().unwrap().is_empty());
         }
     }
 
@@ -590,13 +578,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_refresh_retains_the_direct_hook_snapshot_but_never_authorizes_token_issuance() {
+    async fn failed_refresh_blocks_jwt_issuance_for_get_session_and_token() {
         for (action, status, cookie_count) in [
             ("IGNORE", 401, 3),
             ("ABORT, 'fixture refresh failure'", 500, 0),
         ] {
-            let (auth, db, jwt, observed) = fixture(false, false).await;
-            let (user_id, token, cookie) =
+            let (auth, db, _, observed) = fixture(false, false).await;
+            let (_, token, cookie) =
                 issued(&auth, "failed-refresh@jwt-session.fixture.test").await;
             let before = age(&auth, &db, &token, false).await;
             _ = db.execute_raw(Statement::from_string(DbBackend::Sqlite,
@@ -612,14 +600,7 @@ mod tests {
                 (*(error).get("code").unwrap_or(&Value::Null)),
                 "FAILED_TO_GET_SESSION"
             );
-            let claims = verified(&jwt, &auth, response.headers.get("set-auth-jwt").unwrap()).await;
-            assert_eq!((*(claims).get("sub").unwrap_or(&Value::Null)), user_id);
-            assert_eq!(
-                (*(*(claims).get("snapshot").unwrap_or(&Value::Null))
-                    .get("session")
-                    .unwrap_or(&Value::Null)),
-                before
-            );
+            assert!(response.headers.get("set-auth-jwt").is_none());
             assert_eq!(response.headers.get_all("set-cookie").count(), cookie_count);
             assert_eq!(writes(&db).await, 0);
             assert_eq!(
@@ -630,7 +611,7 @@ mod tests {
                 ),
                 before
             );
-            assert_eq!(observed.0.lock().unwrap().len(), 1);
+            assert!(observed.0.lock().unwrap().is_empty());
             let response_2 = auth
                 .handle_request(request("/token", &cookie))
                 .await
@@ -642,7 +623,7 @@ mod tests {
                 json!({"code":"UNAUTHORIZED","message":"Unauthorized"})
             );
             assert!(response_2.headers.get("set-auth-jwt").is_none());
-            assert_eq!(observed.0.lock().unwrap().len(), 1);
+            assert!(observed.0.lock().unwrap().is_empty());
             assert_eq!(writes(&db).await, 0);
         }
     }

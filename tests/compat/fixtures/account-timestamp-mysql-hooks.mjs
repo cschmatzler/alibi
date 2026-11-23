@@ -7,10 +7,10 @@ import { createMysqlDatabase } from "./support/mysql-database.mjs";
 const compatible = process.argv[2] === "--compatible";
 assert.ok(process.argv[2] === undefined || compatible, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 const mysql = await createMysqlDatabase();
 let events = [];
@@ -64,7 +64,7 @@ try {
   }
   assert.equal(cases.length, 8);
   const filename = compatible ? "account-timestamp-mysql-compatible-hooks" : "account-timestamp-mysql-hooks";
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", backend: "mysql", schema_sql: schemaSql, cases }) + "\n");
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.27", backend: "mysql", schema_sql: schemaSql, cases }) + "\n");
   console.log("Eight actual MySQL account date-transform string results and driver failures");
 } finally {
   await mysql.close();

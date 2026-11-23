@@ -325,11 +325,18 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             call.record_authenticated_session(ctx.user_view(&user)?, session.clone());
             let response = if call.operation_id() == "revokeSession" {
                 let input: RevokeSessionRequest = call.body_as()?;
-                revoke_session_core(&user, &input.token, ctx).await?
+                let response = revoke_session_core(&user, &input.token, ctx).await?;
+                // Revoking the current session expires its cookies.
+                if input.token == session.token() {
+                    alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
+                }
+                response
             } else if call.operation_id() == "revokeOtherSessions" {
                 revoke_other_sessions_core(user.id(), &session, ctx).await?
             } else {
-                revoke_sessions_core(user.id(), ctx).await?
+                let response = revoke_sessions_core(user.id(), ctx).await?;
+                alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
+                response
             };
             return EndpointResponse::json(&response);
         }
@@ -343,6 +350,11 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
         Ok(response
             .with_header("cache-control", "no-store")
             .with_header("pragma", "no-cache"))
+    }
+
+    fn parses_body(&self, route: &AuthRoute) -> bool {
+        // Get-session uses the query and headers, including on refresh POSTs.
+        route.path != "/get-session"
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
@@ -675,6 +687,37 @@ impl SessionManagementPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<GetSessionResponse>> {
+        let response = self.read_session_response(req, ctx).await;
+        // Hooks may read the session only when this request returns one, so
+        // an expired, revoked or failed lookup leaves no session behind,
+        // including one an earlier hook loaded. No authority is installed.
+        if matches!(response, Ok(Some(_))) {
+            if let Some(call) = req.endpoint_call()
+                && let Some((user, session)) = call.session_hook_snapshot()
+            {
+                call.record_authenticated_session(user, session);
+            }
+        } else {
+            // An HTTP dispatch keeps its hook frame in the endpoint context.
+            if let Some(call) = req
+                .endpoint_call()
+                .cloned()
+                .or_else(alibi_core::endpoint::current_endpoint_call_context)
+            {
+                call.clear_session_hook_snapshot();
+            }
+            if let Some(request) = req.physical_request() {
+                request.clear_session_hook_snapshot();
+            }
+        }
+        response
+    }
+
+    async fn read_session_response(
+        &self,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<Option<GetSessionResponse>> {
         if req.session_method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
             return Err(AuthError::Upstream {
                 status: 405,
@@ -683,13 +726,6 @@ impl SessionManagementPlugin {
             });
         }
         let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await;
-        // Completed hooks observe the actual pre-expiry lookup, even when the
-        // session is retired and the public result is null. No authority is installed.
-        if let Some(call) = req.endpoint_call()
-            && let Some((user, session)) = call.session_hook_snapshot()
-        {
-            call.record_authenticated_session(user, session);
-        }
         let Some(read) = read.map_err(|error| match error {
             error @ (AuthError::Upstream { .. } | AuthError::Api { .. }) => error,
             _ => AuthError::Upstream {
@@ -817,11 +853,15 @@ impl SessionManagementPlugin {
             Err(resp) => return Ok(resp),
         };
 
-        let (user, _) = ctx
+        let (user, session) = ctx
             .require_authoritative_cached_session(req)
             .await
             .map_err(unauthorized_if_unauthenticated)?;
         let response = revoke_session_core(&user, &revoke_req.token, ctx).await?;
+        // Revoking the current session expires its cookies.
+        if revoke_req.token == session.token() {
+            alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, req)?;
+        }
         Ok(AuthResponse::json(200, &response)?)
     }
 
@@ -835,6 +875,7 @@ impl SessionManagementPlugin {
             .await
             .map_err(unauthorized_if_unauthenticated)?;
         let response = revoke_sessions_core(user.id(), ctx).await?;
+        alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, req)?;
         Ok(AuthResponse::json(200, &response)?)
     }
 

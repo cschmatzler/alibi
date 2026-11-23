@@ -9,10 +9,10 @@ import { oauthProvider } from "../reference-server/node_modules/@better-auth/oau
 import { config } from "../reference-server/probes/schema-parity.mjs";
 
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter", "@better-auth/oauth-provider"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const schema = `oauth_consent_oracle_${randomBytes(8).toString("hex")}`;
@@ -51,7 +51,7 @@ try {
     cases.push({ action, input, failed, output: projection(row), stored: rows[0] });
   }
   assert.equal(cases.length, 5);
-  await writeFile(new URL("../../fixtures/postgres-oauth-consent-json.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+  await writeFile(new URL("../../fixtures/postgres-oauth-consent-json.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
   console.log(`${cases.length} actual PostgreSQL consent JSON create/read/CHECK/update cases`);
 } finally {
   await db.destroy();

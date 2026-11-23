@@ -106,6 +106,7 @@ function isolation(
   before: z.infer<typeof snapshot>,
   after: z.infer<typeof snapshot>,
   target: Awaited<ReturnType<typeof setup>>,
+  deleted: boolean,
 ) {
   for (const key of ["organizations", "members", "invitations"] as const) {
     expect(after[key].filter(belongsTo(target.foreignOrg.id))).toEqual(
@@ -121,7 +122,8 @@ function isolation(
     before.sessions.filter((r) => r.id !== target.session.id),
   );
   expect(after.sessions.find((r) => r.id === target.session.id)).toMatchObject({
-    activeOrganizationId: null,
+    // Better Auth #12334 clears the selection after deletion and before the after hook.
+    activeOrganizationId: deleted ? null : target.org.id,
     activeTeamId: target.session.activeTeamId,
   });
 }
@@ -178,7 +180,7 @@ compatScenario(
         header: "actual-http-header",
       });
 
-      isolation(before.snapshot, r.snapshot, target);
+      isolation(before.snapshot, r.snapshot, target, r.phase === "after");
     }
 
     for (const key of ["organizations", "members", "invitations"] as const) {
@@ -186,7 +188,7 @@ compatScenario(
       expect(after.receipts[1]!.snapshot[key].some(belongsTo(target.org.id))).toBe(false);
     }
 
-    isolation(before.snapshot, after.snapshot, target);
+    isolation(before.snapshot, after.snapshot, target, true);
     expect(data(await target.sibling.getSession()).session.activeOrganizationId).toBe(
       target.org.id,
     );
@@ -225,7 +227,7 @@ compatScenario(
         phase === "before" ? ["before"] : ["before", "after"],
       );
 
-      isolation(before.snapshot, after.snapshot, target);
+      isolation(before.snapshot, after.snapshot, target, phase === "after");
 
       for (const key of ["organizations", "members", "invitations"] as const) {
         if (phase === "before") {
@@ -292,7 +294,7 @@ compatScenario(
       expect(after.snapshot[key]).toEqual(rows.snapshot[key]);
     }
 
-    isolation(rows.snapshot, after.snapshot, target);
+    isolation(rows.snapshot, after.snapshot, target, false);
 
     const disabled = await signUp(ctx, "hook-disabled", "org-deletion-hooks-disabled");
     const disabledOrg = data(
@@ -383,7 +385,7 @@ compatScenario(
       expect(r.session.activeOrganizationId).toBe(target.org.id);
     }
 
-    isolation(before.snapshot, after.snapshot, target);
+    isolation(before.snapshot, after.snapshot, target, true);
 
     const next = data(
       await target.owner.client.organization.create({
@@ -416,7 +418,7 @@ compatScenario(
       expect(afterReject.snapshot[key]).toEqual(beforeReject.snapshot[key]);
     }
 
-    isolation(beforeReject.snapshot, afterReject.snapshot, rejecting);
+    isolation(beforeReject.snapshot, afterReject.snapshot, rejecting, false);
 
     const disabledGuest = await call("trusted-guest", next.id, "org-deletion-hooks-disabled");
     expect(disabledGuest.status).toBe(404);
@@ -458,7 +460,7 @@ compatScenario(
     expect(after.receipts[1]!.organization.name).toBe(target.org.name);
     expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
 
-    isolation(before.snapshot, after.snapshot, target);
+    isolation(before.snapshot, after.snapshot, target, true);
 
     return { before, deleted: ctx.snapshot(deleted), after };
   },
@@ -490,7 +492,7 @@ compatScenario(
         expect(paused.snapshot[key]).toEqual(before.snapshot[key]);
       }
 
-      isolation(before.snapshot, paused.snapshot, target);
+      isolation(before.snapshot, paused.snapshot, target, false);
     } finally {
       // Preserve both complete concurrent traces in a defined observation order.
       const release = await createTracingFetch(
@@ -510,7 +512,7 @@ compatScenario(
     expect(after.receipts.map((r) => r.phase)).toEqual(["before", "after"]);
     expect(after.snapshot.organizations.some((r) => r.id === target.org.id)).toBe(false);
 
-    isolation(before.snapshot, after.snapshot, target);
+    isolation(before.snapshot, after.snapshot, target, true);
 
     await configure(ctx, "record");
     const abortTarget = await setup(ctx, "disconnected-delete");
@@ -571,7 +573,8 @@ compatScenario(
       expect(continued.snapshot[key].some(belongsTo(abortTarget.org.id))).toBe(false);
     }
 
-    isolation(abortBefore.snapshot, continued.snapshot, abortTarget);
+    isolation(abortBefore.snapshot, abortPaused!.snapshot, abortTarget, false);
+    isolation(abortBefore.snapshot, continued.snapshot, abortTarget, true);
     expect(continued.receipts[1]!.user.id).toBe(abortTarget.owner.user.id);
 
     return {

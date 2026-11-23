@@ -510,6 +510,16 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Transactional JWKS writes are unsupported by this store",
         ))
     }
+    /// Insert a SIWE wallet address on this transaction's connection, with the
+    /// owner check of [`crate::store::WalletAddressStore::create_wallet_address`].
+    async fn create_wallet_address(
+        &self,
+        _data: crate::CreateWalletAddress,
+    ) -> AuthResult<crate::WalletAddress> {
+        Err(AuthError::NotImplemented(
+            "Wallet address creation in a transaction is not supported by this store".to_owned(),
+        ))
+    }
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.

@@ -5,7 +5,8 @@ use super::OAuthSignInError;
 use super::fetch_user_info_from_provider;
 use super::identity::provider_candidate;
 use super::oauth_disable_sign_up_option;
-use super::process_oauth_sign_in;
+use super::process_oauth_sign_in_with_account_fields;
+use super::resolve_oauth_account_fields;
 use super::resolve_oauth_account_key;
 use crate::oauth::encryption::encrypt_provider_token_set;
 use crate::oauth::encryption::encrypt_token_set;
@@ -14,6 +15,7 @@ use crate::oauth::providers::OAuthProvider;
 use crate::oauth::providers::OAuthTokenSet;
 use crate::oauth::providers::OAuthUserInfo;
 use crate::oauth::providers::OAuthUserInfoRequest;
+use crate::oauth::state::AccountCookiePayload;
 use crate::oauth::state::OAuthStateLink;
 use crate::oauth::types::LinkSocialRequest;
 use crate::oauth::types::OAuthIdTokenRequest;
@@ -51,6 +53,7 @@ pub(crate) async fn complete_link_social(
         link,
         ctx,
         (None, None),
+        None,
     )
     .await
     .map(|_| ())
@@ -67,6 +70,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         Option<&alibi_core::utils::json::JsValue>,
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
+    account_fields: Option<&FieldValues>,
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
     if ctx.config.session.has_server_session_store()
         && let Some(encrypted) = &link.encrypted_session_token
@@ -149,6 +153,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
             .update_account_record(
                 &existing_account.id(),
                 UpdateAccount {
+                    additional_fields: account_fields.cloned().unwrap_or_default(),
                     provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                     access_token: token_bundle.access_token,
                     refresh_token: token_bundle.refresh_token,
@@ -172,13 +177,16 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
 
     _ = ctx
         .database
-        .create_account_record(super::provider_account(
-            link.user_id.clone(),
-            user_info.id.clone(),
-            provider_name.to_owned(),
-            token_bundle,
-            tokens,
-        ))
+        .create_account_record(CreateAccount {
+            additional_fields: account_fields.cloned().unwrap_or_default(),
+            ..super::provider_account(
+                link.user_id.clone(),
+                user_info.id.clone(),
+                provider_name.to_owned(),
+                token_bundle,
+                tokens,
+            )
+        })
         .await
         .map_err(|_error| "unable_to_link_account".to_owned())?;
 
@@ -189,11 +197,7 @@ fn id_token_grant(id_token: &OAuthIdTokenRequest) -> OAuthTokenSet {
     OAuthTokenSet {
         access_token: id_token.access_token.clone(),
         refresh_token: id_token.refresh_token.clone(),
-        access_token_expires_at: id_token
-            .expires_at
-            .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
         id_token: Some(id_token.token.clone()),
-        scopes: id_token.scopes.clone().unwrap_or_default(),
         ..Default::default()
     }
 }
@@ -246,7 +250,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     provider: &OAuthProvider,
     meta: &alibi_core::RequestMeta,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<SocialSignInResponse> {
+) -> AuthResult<(SocialSignInResponse, Option<AccountCookiePayload>)> {
     let mut user_info = id_token_user_info(provider, id_token).await?;
 
     if user_info
@@ -261,18 +265,23 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         });
     }
 
-    resolve_oauth_account_key(provider, &id_token_grant(id_token), &mut user_info)
+    let grant = id_token_grant(id_token);
+    resolve_oauth_account_key(provider, &grant, &mut user_info)
         .await
         .map_err(|_error| AuthError::Upstream {
             status: 401,
             code: codes::FAILED_TO_GET_USER_INFO,
             message: "Failed to get user info",
         })?;
+    let canonical_user =
+        OAuthUserInfo::from_fields(&user_info.user, user_info.account_subject.as_ref());
+    let account_fields = resolve_oauth_account_fields(provider, &grant, &canonical_user, ctx)
+        .await?;
 
-    let outcome = process_oauth_sign_in(
+    let outcome = process_oauth_sign_in_with_account_fields(
         OAuthIdentity {
             provider_name: &body.provider,
-            user: &OAuthUserInfo::from_fields(&user_info.user, user_info.account_subject.as_ref()),
+            user: &canonical_user,
             profile: &user_info.data,
         },
         &OAuthProcessPolicy::for_provider(provider, body.callback_url.clone()),
@@ -286,6 +295,8 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
             || provider.disable_sign_up,
         meta,
         ctx,
+        (None, None),
+        account_fields.as_ref(),
     )
     .await
     .map_err(|error| match error {
@@ -312,13 +323,16 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         },
     })?;
 
-    Ok(SocialSignInResponse {
-        url: None,
-        redirect: false,
-        status: None,
-        token: Some(outcome.session.token().to_owned()),
-        user: Some(outcome.user),
-    })
+    Ok((
+        SocialSignInResponse {
+            url: None,
+            redirect: false,
+            status: None,
+            token: Some(outcome.session.token().to_owned()),
+            user: Some(outcome.user),
+        },
+        outcome.account_cookie,
+    ))
 }
 
 #[expect(
@@ -334,9 +348,8 @@ pub(in crate::oauth) async fn link_with_id_token_core(
 ) -> AuthResult<SocialSignInResponse> {
     let mut response = id_token_user_info(provider, id_token).await?;
 
-    let canonical_user =
-        OAuthUserInfo::from_fields(&response.user, response.account_subject.as_ref());
-    if canonical_user.email.is_empty() {
+    let email = response.user.get("email").and_then(|value| value.as_js_string());
+    if email.is_none_or(alibi_core::utils::json::JsString::is_empty) {
         return Err(AuthError::Upstream {
             status: 401,
             code: codes::USER_EMAIL_NOT_FOUND,
@@ -344,13 +357,16 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         });
     }
 
-    resolve_oauth_account_key(provider, &id_token_grant(id_token), &mut response)
+    let grant = id_token_grant(id_token);
+    resolve_oauth_account_key(provider, &grant, &mut response)
         .await
         .map_err(|_error| AuthError::Upstream {
             status: 401,
             code: codes::FAILED_TO_GET_USER_INFO,
             message: "Failed to get user info",
         })?;
+    let canonical_user =
+        OAuthUserInfo::from_fields(&response.user, response.account_subject.as_ref());
 
     let linked_account = ctx
         .database
@@ -369,10 +385,30 @@ pub(in crate::oauth) async fn link_with_id_token_core(
             message: "Social account already linked",
         });
     }
-    let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;
-    if existing_accounts.iter().any(|account| {
-        account.provider_id() == body.provider && canonical_user.id == account.account_id()
-    }) {
+    if let Some(account) = linked_account {
+        // Linking an account the user already owns refreshes its tokens.
+        let account_fields = resolve_oauth_account_fields(provider, &grant, &canonical_user, ctx)
+            .await?;
+        let token_bundle = encrypt_token_set(
+            ctx,
+            id_token.access_token.clone(),
+            id_token.refresh_token.clone(),
+            Some(id_token.token.clone()),
+        )?;
+        _ = ctx
+            .database
+            .update_account_record(
+                &account.id(),
+                UpdateAccount {
+                    additional_fields: account_fields.unwrap_or_default(),
+                    access_token: token_bundle.access_token,
+                    refresh_token: token_bundle.refresh_token,
+                    id_token: token_bundle.id_token,
+                    ..Default::default()
+                },
+            )
+            .await?;
+        update_user_info_on_link(&canonical_user, &session.user_id(), ctx).await;
         return Ok(SocialSignInResponse {
             url: Some(String::new()),
             redirect: false,
@@ -406,6 +442,8 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         ));
     }
 
+    let account_fields = resolve_oauth_account_fields(provider, &grant, &canonical_user, ctx)
+        .await?;
     let token_bundle = encrypt_token_set(
         ctx,
         id_token.access_token.clone(),
@@ -415,10 +453,10 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     _ = ctx
         .database
         .create_account_record(CreateAccount {
-            additional_fields: FieldValues::default(),
+            additional_fields: account_fields.unwrap_or_default(),
             user_id: session.user_id().to_string(),
             provider_id: body.provider.clone(),
-            account_id: canonical_user.id,
+            account_id: canonical_user.id.clone(),
             access_token: token_bundle.access_token,
             refresh_token: token_bundle.refresh_token,
             id_token: token_bundle.id_token,
@@ -434,27 +472,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
             AuthError::bad_request("Account not linked - unable to create account")
         })?;
 
-    if linking.update_user_info_on_link {
-        _ = ctx
-            .database
-            .update_user_record(
-                &session.user_id(),
-                UpdateUser {
-                    name: canonical_user
-                        .name
-                        .as_ref()
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned),
-                    image: canonical_user
-                        .image
-                        .as_ref()
-                        .and_then(|value| value.as_str())
-                        .map(str::to_owned),
-                    ..Default::default()
-                },
-            )
-            .await;
-    }
+    update_user_info_on_link(&canonical_user, &session.user_id(), ctx).await;
 
     Ok(SocialSignInResponse {
         url: Some(String::new()),
@@ -463,4 +481,34 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         token: None,
         user: None,
     })
+}
+
+/// `accountLinking.updateUserInfoOnLink`: a failed update does not fail the link.
+async fn update_user_info_on_link(
+    user: &OAuthUserInfo,
+    user_id: &str,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) {
+    if !ctx.config.account.account_linking.update_user_info_on_link {
+        return;
+    }
+    _ = ctx
+        .database
+        .update_user_record(
+            user_id,
+            UpdateUser {
+                name: user
+                    .name
+                    .as_ref()
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned),
+                image: user
+                    .image
+                    .as_ref()
+                    .and_then(|value| value.as_str())
+                    .map(str::to_owned),
+                ..Default::default()
+            },
+        )
+        .await;
 }

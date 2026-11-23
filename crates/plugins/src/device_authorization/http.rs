@@ -113,12 +113,27 @@ impl DeviceAuthorizationPlugin {
         if device_code.user_id.is_none()
             && device_code.status == DEVICE_STATUS_PENDING
             && let Some(user_id) = user_id.as_deref()
-            && ctx
+        {
+            if ctx
                 .database
                 .claim_device_code(&device_code.id, user_id)
                 .await?
-        {
-            device_code.user_id = Some(user_id.to_owned());
+            {
+                device_code.user_id = Some(user_id.to_owned());
+            } else {
+                // A concurrent lookup claimed the code first, possibly for this
+                // same user, so the stored owner decides who may review it.
+                let Some(current) = ctx
+                    .database
+                    .get_device_code_by_user_code(&device_code.user_code)
+                    .await?
+                    .filter(|current| current.id == device_code.id)
+                else {
+                    return device_error_response(400, "invalid_request", INVALID_USER_CODE);
+                };
+                device_code.user_id = current.user_id;
+                device_code.status = current.status;
+            }
         }
         let can_review_request = user_id.is_some() && device_code.user_id == user_id;
 

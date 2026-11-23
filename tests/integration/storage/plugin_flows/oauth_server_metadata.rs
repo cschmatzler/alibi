@@ -11,7 +11,7 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    for mode in ["default", "oauth", "disabled", "configured"] {
+    for mode in ["default", "oauth", "disabled", "configured", "advertised"] {
         let mut provider = OAuthProviderConfig::default();
         let mut jwt = JwtPluginConfig::default();
         if mode == "oauth" || mode == "configured" {
@@ -19,6 +19,9 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
         }
         if mode == "disabled" {
             provider.disable_jwt_plugin = true;
+        }
+        if mode == "advertised" {
+            provider.advertised_token_endpoint_auth_methods = Some(vec!["none".into()]);
         }
         if mode == "configured" {
             provider.advertised_scopes = Some(vec!["read".into()]);
@@ -53,8 +56,15 @@ async fn oauth_server_discovery_tracks_configured_policy_without_writes<B: Backe
             format!("{ORIGIN}/api/auth/oauth2/token")
         );
         assert_eq!(output["code_challenge_methods_supported"], json!(["S256"]));
+        if mode == "advertised" {
+            assert_eq!(output["token_endpoint_auth_methods_supported"], json!(["none"]));
+            assert_eq!(
+                output["introspection_endpoint_auth_methods_supported"],
+                json!(["client_secret_basic", "client_secret_post", "private_key_jwt"])
+            );
+        }
         if mode == "configured" {
-            assert_eq!(output["issuer"], "https://issuer.fixture.test/tenant");
+            assert_eq!(output["issuer"], "http://issuer.fixture.test/tenant");
             assert_eq!(output["jwks_uri"], "https://keys.fixture.test/jwks");
             assert_eq!(
                 output["registration_endpoint"],

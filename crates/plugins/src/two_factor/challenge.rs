@@ -188,11 +188,17 @@ pub(in crate::two_factor) async fn resolve_two_factor_state<S: alibi_core::AuthS
     let identifier = read_signed_cookie(req, TWO_FACTOR_COOKIE_SUFFIX, ctx)
         .filter(|identifier| !identifier.is_empty())
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    // Preserve the newest lookup snapshot across optional global cleanup.
-    // Expiry is enforced by the later atomic attempt/challenge consumption,
-    // after the source's user lookup and factor-specific checks.
+    // Preserve the newest lookup snapshot across optional global cleanup. An
+    // expired challenge is rejected here, before an OTP is sent or a failed
+    // attempt is counted; the later atomic attempt/challenge consumption
+    // still guards a challenge that expires mid-request.
     let verification = super::super::authentication_helpers::find_verification(ctx, &identifier)
         .await?
+        .filter(|verification| {
+            verification
+                .expires_at()
+                .is_ok_and(|expires_at| expires_at > Utc::now())
+        })
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
 
     let user = ctx

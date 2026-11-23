@@ -16,7 +16,7 @@ use super::linking::sign_in_with_id_token_core;
 use super::oauth_callback_path;
 use super::oauth_disable_sign_up_option;
 use super::parse_callback_user_payload;
-use super::process_oauth_sign_in_with_output;
+use super::process_oauth_sign_in_with_account_fields;
 use super::redirects::auth_base_url;
 use super::redirects::build_default_error_url;
 use super::redirects::build_redirect_url;
@@ -62,14 +62,20 @@ pub(crate) async fn handle_social_sign_in(
         let provider = config
             .provider(&body.provider)
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
-        let response = match sign_in_with_id_token_core(&body, id_token, provider, &meta, ctx).await
-        {
+        let (response, account_cookie) = match sign_in_with_id_token_core(
+            &body, id_token, provider, &meta, ctx,
+        ).await {
             Err(AuthError::Database(alibi_core::DatabaseError::AmbiguousAccount { .. })) => {
                 return Ok(ambiguous_account_sign_in_response(ctx));
             }
             result => result?,
         };
         let mut auth_response = AuthResponse::json(200, &response).map_err(AuthError::from)?;
+        if let Some(account_cookie) = &account_cookie {
+            for cookie in create_account_cookie_headers(&ctx.config, account_cookie, req)? {
+                auth_response.headers.append("Set-Cookie", cookie);
+            }
+        }
         if let Some(token) = response.token.as_deref() {
             auth_response = auth_response.with_appended_header(
                 "Set-Cookie",
@@ -503,6 +509,22 @@ pub(in crate::oauth) async fn callback_core(
         user_info.account_subject.as_ref(),
     );
 
+    let account_fields =
+        match super::resolve_oauth_account_fields(provider, &tokens, &canonical_user, ctx).await {
+            Ok(fields) => fields,
+            Err(error @ (AuthError::Api { code: Some(_), .. } | AuthError::Upstream { .. })) => {
+                let (_, code, message) = error.error_payload();
+                return Ok(redirect_on_error(
+                    code.as_deref().unwrap_or("unable_to_get_user_info"),
+                    Some(&message),
+                ));
+            }
+            Err(error) => {
+                tracing::error!(%error, "getAccountFields failed");
+                return Ok(redirect_on_error("unable_to_get_user_info", None));
+            }
+        };
+
     let raw_email = provider
         .authorization
         .as_ref()
@@ -519,6 +541,7 @@ pub(in crate::oauth) async fn callback_core(
             link,
             ctx,
             (raw_email, provider.authorization.as_ref()),
+            account_fields.as_ref(),
         )
         .await;
         if matches!(link_result, Ok(LinkSocialOutcome::InvalidRawEmail)) {
@@ -565,7 +588,7 @@ pub(in crate::oauth) async fn callback_core(
                 .authorization
                 .as_ref()
                 .is_none_or(|policy| policy.honor_factory_options));
-    let outcome = match process_oauth_sign_in_with_output(
+    let outcome = match process_oauth_sign_in_with_account_fields(
         OAuthIdentity {
             provider_name,
             user: &canonical_user,
@@ -584,6 +607,7 @@ pub(in crate::oauth) async fn callback_core(
                 .map(|_| &user_info.user),
             provider.authorization.as_ref(),
         ),
+        account_fields.as_ref(),
     )
     .await
     {

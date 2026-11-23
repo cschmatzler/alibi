@@ -28,6 +28,7 @@ pub use user_resolution::{
 };
 mod organization_provisioning;
 mod saml_signout;
+mod saml_session;
 pub use organization_provisioning::{
     SsoOrganizationProvisioning, SsoOrganizationRoleResolver, SsoRoleResolver,
 };
@@ -480,7 +481,13 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
         "sso"
     }
     async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
-        alibi_core::store::validate_sso_fields(&ctx.config.advanced.database)
+        alibi_core::store::validate_sso_fields(&ctx.config.advanced.database)?;
+        if self.config.saml_enable_single_logout {
+            ctx.register_adapter_after_hook(std::sync::Arc::new(saml_session::ExtendSamlSession(
+                AuthContext::new(ctx.config.clone(), ctx.database.clone()),
+            )));
+        }
+        Ok(())
     }
     fn origin_check_skip_paths(&self) -> Vec<&'static str> {
         vec!["/sso/saml2/sp/acs", "/sso/saml2/sp/slo"]
@@ -837,6 +844,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                 .sign_in(
                     call.body()
                         .ok_or_else(|| super::endpoint::validation("Missing body"))?,
+                    call,
                     ctx,
                 )
                 .await;
@@ -1034,7 +1042,7 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
                     .map_err(|_| super::endpoint::validation("Invalid JSON"))?,
             )?;
             return Ok(Some(
-                self.sign_in(&sign_in::validate(Some(&input))?, ctx)
+                self.sign_in(&sign_in::validate(Some(&input))?, req, ctx)
                     .await?
                     .to_response()?,
             ));

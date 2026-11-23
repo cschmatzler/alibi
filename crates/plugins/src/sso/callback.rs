@@ -545,6 +545,25 @@ impl SsoPlugin {
             false,
         )?;
         response.headers.append("Set-Cookie", clear);
+        let secret = if ctx.config.account.store_state_strategy == OAuthStateStrategy::Cookie {
+            cookie
+                .as_deref()
+                .and_then(|token| crate::token_crypto::decryption_key(token, &ctx.config).ok())
+        } else {
+            Some(ctx.config.current_secret())
+        };
+        if let Some(query) = secret
+            .and_then(|secret| {
+                crate::oauth::state::authenticated_server_context(&payload, state, secret)
+            })
+            .and_then(|context| context.get("oauthProviderInteraction"))
+            .and_then(Value::as_str)
+        {
+            crate::oauth_provider::interaction::restore_admitted_query(
+                request.extensions(),
+                query.to_owned(),
+            );
+        }
         Ok(EndpointResponse::from_http_response(response))
     }
 }

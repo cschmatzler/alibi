@@ -10,12 +10,54 @@ backend_tests!(
     admin_input_and_session_matrix,
     admin_remember_me_impersonation,
     admin_banned_message_callback,
+    admin_create_user_rolls_back_rejected_credential_account,
     admin_failure_modes,
     admin_user_validation,
     zero_admin_durations_and_empty_reason_use_effective_defaults,
     fractional_and_negative_admin_bans_preserve_milliseconds_and_ownership,
     configured_impersonation_durations_preserve_milliseconds_and_authority
 );
+postgres_tests!(admin_create_user_rolls_back_rejected_credential_account);
+
+// e786566dc adds rollback and a retry with the same email after account insertion fails.
+async fn admin_create_user_rolls_back_rejected_credential_account<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(AdminPlugin::new())
+        .build()
+        .await?;
+    let (_, cookie) = promoted::<B>(&auth, "admin-transaction@fixture.test", "admin").await;
+    if db.is_postgres() {
+        _ = db.execute("CREATE FUNCTION veto_credential() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'credential insert veto'; END $$", &[]).await?;
+        _ = db.execute("CREATE TRIGGER veto_credential BEFORE INSERT ON \"account\" FOR EACH ROW WHEN (NEW.\"providerId\"='credential') EXECUTE FUNCTION veto_credential()", &[]).await?;
+    } else {
+        _ = db.execute("CREATE TRIGGER veto_credential BEFORE INSERT ON \"account\" WHEN NEW.\"providerId\"='credential' BEGIN SELECT RAISE(FAIL, 'credential insert veto'); END", &[]).await?;
+    }
+    let before = db.tables(&["user", "account"]).await?;
+    let email = "admin-created@fixture.test";
+    let create = request(
+        "/admin/create-user",
+        Some(json!({"email":email,"password":"test-password","name":"New user"})),
+        &cookie,
+    );
+    let _ = call(&auth, create.clone(), 500).await;
+    assert_eq!(db.tables(&["user", "account"]).await?, before);
+    _ = db
+        .execute(
+            if db.is_postgres() {
+                "DROP TRIGGER veto_credential ON \"account\""
+            } else {
+                "DROP TRIGGER veto_credential"
+            },
+            &[],
+        )
+        .await?;
+    let created = call(&auth, create, 200).await;
+    assert_eq!(body(&created)["user"]["email"], email);
+    assert_eq!(db.count("user").await?, 2);
+    assert_eq!(db.count("account").await?, 2);
+    B::close(connection).await
+}
 
 fn merge(first: &str, second: &str) -> String {
     let mut jar = BTreeMap::new();

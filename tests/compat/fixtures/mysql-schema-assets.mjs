@@ -5,7 +5,7 @@ import { scim } from "../reference-server/node_modules/@better-auth/scim/dist/in
 import { config } from "../reference-server/probes/schema-parity.mjs";
 import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/scim/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/scim/package.json", import.meta.url))).version, "1.7.27");
 const database = await createMysqlDatabase();
 try {
   const migrations = await getMigrations({ ...config, plugins: [...config.plugins, scim({
@@ -36,9 +36,9 @@ try {
     assert.ok(statements.length, group);
     const suffix = group === "auth" ? "" : `_${group}`;
     await writeFile(new URL(`../../../crates/schema-registry/schema/mysql${suffix}.sql`, import.meta.url),
-      `-- Generated from Better Auth 1.7.18 by mysql-schema-assets.mjs.\n\n${statements.join("\n\n")}\n`);
+      `-- Generated from Better Auth 1.7.27 by mysql-schema-assets.mjs.\n\n${statements.join("\n\n")}\n`);
   }
-  await writeFile(new URL("../../fixtures/schema/mysql-1.7.18.json", import.meta.url), JSON.stringify({ columns, indexes }, null, 2) + "\n");
+  await writeFile(new URL("../../fixtures/schema/mysql-1.7.27.json", import.meta.url), JSON.stringify({ columns, indexes }, null, 2) + "\n");
   console.log(`${new Set(columns.map(row => row.tableName)).size} actual MySQL tables, ${columns.length} columns, ${indexes.length} index columns including managed SCIM`);
 } finally {
   await database.close();

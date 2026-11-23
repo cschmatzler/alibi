@@ -698,9 +698,8 @@ async fn oauth_token_exchanges_bound_code_and_revokes_on_replay<B: Backend>(db: 
             );
             let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .encode(sha2::Sha256::digest(&code));
-            // Client authentication precedes the code lookup, so a rejected
-            // secret leaves the one-time code unconsumed.
-            let retained = early || matches!(case, "code" | "secret");
+            // A rejected request leaves the code available for a corrected retry.
+            let retained = !success;
             assert_eq!(
                 auth.store()
                     .get_verification_by_identifier(&hash)
@@ -717,16 +716,8 @@ async fn oauth_token_exchanges_bound_code_and_revokes_on_replay<B: Backend>(db: 
             let mut token = if success { body(&output) } else { Value::Null };
             if !success {
                 let retry = Box::pin(auth.handle_request(public_request(&valid))).await?;
-                if retained {
-                    assert_eq!(retry.status, 200);
-                    token = body(&retry);
-                } else {
-                    assert_eq!(retry.status, 400);
-                    assert_eq!(
-                        body(&retry),
-                        json!({"error":"invalid_grant","error_description":"invalid code"})
-                    );
-                }
+                assert_eq!(retry.status, 200);
+                token = body(&retry);
             }
             if let Some(access) = token["access_token"].as_str() {
                 let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD

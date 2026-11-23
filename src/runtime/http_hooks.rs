@@ -46,9 +46,11 @@ impl<S: AuthSchema> Alibi<S> {
                 return render_http_endpoint_response(&response).map(Some);
             }
             Err(failure) => {
-                if let Some(headers) = failure.headers {
+                if let Some(mut headers) = failure.headers {
+                    // Explicit error headers override accumulated ones.
                     let mut response = failure.error.to_auth_response();
-                    response.headers.merge(headers);
+                    headers.merge(std::mem::take(&mut response.headers));
+                    response.headers = headers;
                     return Ok(Some(response));
                 }
                 return Err(http_hook_error(failure.error));

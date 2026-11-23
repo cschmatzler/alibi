@@ -488,16 +488,16 @@
     }
   },
   {
-    "existing endpoint parameters are replaced in place": {
+    "endpoint parameters kept before replacements": {
       "base": "https://accounts.example/authorize",
       "query": [
         [
-          "response_type",
-          "code"
-        ],
-        [
           "keep",
           "1"
+        ],
+        [
+          "response_type",
+          "code"
         ],
         [
           "client_id",

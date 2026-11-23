@@ -34,7 +34,7 @@ async fn check<B: Backend>(db: Db, persist: bool, action: &str) -> TestResult {
     } else {
         include_str!("../../fixtures/session-secondary-clock.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(
         fixture["backend"],
         if db.is_postgres() {

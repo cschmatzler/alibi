@@ -6,6 +6,7 @@ use super::{
         scim_user as user,
     },
     map_db_err,
+    scim_projection::{SCIM_ID_CHUNK_SIZE, find_scim_chunks},
 };
 use alibi_core::{
     AuthError, AuthResult, AuthSchema,
@@ -13,7 +14,7 @@ use alibi_core::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, IntoActiveModel,
-    PaginatorTrait, QueryFilter, QuerySelect, Set, sea_query::Expr,
+    PaginatorTrait, QueryFilter, Set, sea_query::Expr,
 };
 impl<S: AuthSchema> SeaOrmStore<S> {
     pub(super) async fn replace_scim_group_with_connection<C: ConnectionTrait>(
@@ -51,19 +52,13 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         connection: &str,
         ids: &[String],
     ) -> AuthResult<()> {
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
-        if !ids.is_empty()
-            && user::Entity::find()
+        let owned = find_scim_chunks(db, ids, true, |chunk| {
+            user::Entity::find()
                 .filter(user::Column::ConnectionId.eq(connection))
-                .filter(user::Column::Id.is_in(ids.iter().cloned()))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?
-                .len()
-                != ids.len()
-        {
+                .filter(user::Column::Id.is_in(chunk.iter().cloned()))
+        })
+        .await?;
+        if owned.len() != ids.len() {
             return Err(AuthError::Api {
                 status: 400,
                 code: None,
@@ -90,11 +85,11 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             .filter(|member| !desired.contains(&member.scim_user_id))
             .map(|member| member.scim_user_id.clone())
             .collect::<Vec<_>>();
-        if !removed.is_empty() {
+        for chunk in removed.chunks(SCIM_ID_CHUNK_SIZE) {
             _ = member::Entity::delete_many()
                 .filter(member::Column::ConnectionId.eq(&group.connection_id))
                 .filter(member::Column::GroupId.eq(&group.id))
-                .filter(member::Column::ScimUserId.is_in(removed.iter().cloned()))
+                .filter(member::Column::ScimUserId.is_in(chunk.iter().cloned()))
                 .exec(db)
                 .await
                 .map_err(map_db_err)?;
@@ -208,20 +203,18 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         group: &group::Model,
         targets: Option<&[String]>,
     ) -> AuthResult<Vec<member::Model>> {
-        let mut query = member::Entity::find()
-            .filter(member::Column::ConnectionId.eq(&group.connection_id))
-            .filter(member::Column::GroupId.eq(&group.id));
-        if let Some(targets) = targets {
-            query = query.filter(member::Column::ScimUserId.is_in(targets.iter().cloned()));
-        }
-        query
-            .limit(
-                u64::try_from(self.config.advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
-            .all(db)
-            .await
-            .map_err(map_db_err)
+        let query = || {
+            member::Entity::find()
+                .filter(member::Column::ConnectionId.eq(&group.connection_id))
+                .filter(member::Column::GroupId.eq(&group.id))
+        };
+        let Some(targets) = targets else {
+            return query().all(db).await.map_err(map_db_err);
+        };
+        find_scim_chunks(db, targets, true, |chunk| {
+            query().filter(member::Column::ScimUserId.is_in(chunk.iter().cloned()))
+        })
+        .await
     }
     pub(super) async fn patch_scim_group_with_connection<C: ConnectionTrait>(
         &self,
@@ -396,12 +389,9 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         _ = self
             .lock_scim_group_with_connection(db, id, connection, domain)
             .await?;
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
         let members = member::Entity::find()
             .filter(member::Column::ConnectionId.eq(connection))
             .filter(member::Column::GroupId.eq(id))
-            .limit(limit)
             .all(db)
             .await
             .map_err(map_db_err)?
@@ -468,26 +458,8 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 true,
             )
             .await?;
-        if !data.member_ids.is_empty() {
-            let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-                .unwrap_or(u64::MAX);
-            if user::Entity::find()
-                .filter(user::Column::ConnectionId.eq(&data.connection_id))
-                .filter(user::Column::Id.is_in(data.member_ids.iter().cloned()))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?
-                .len()
-                != data.member_ids.len()
-            {
-                return Err(AuthError::Api {
-                    status: 400,
-                    code: None,
-                    message: "One or more Group members are invalid".into(),
-                });
-            }
-        }
+        self.validate_group_members_with_connection(db, &data.connection_id, &data.member_ids)
+            .await?;
         for member_id in &data.member_ids {
             _ = member::ActiveModel {
                 id: Set(self

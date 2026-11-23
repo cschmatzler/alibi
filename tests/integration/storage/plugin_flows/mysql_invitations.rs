@@ -40,7 +40,7 @@ async fn mysql_invitation_acceptance_matches_actual_rollback_and_status_claims()
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../fixtures/mysql-invitation-acceptance.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let mut owner_jar = BTreeMap::new();
     let mut guest_jar = BTreeMap::new();
     for (jar, email) in [

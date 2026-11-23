@@ -292,7 +292,7 @@ impl UserManagementPlugin {
             })?;
         call.record_authenticated_session(ctx.user_view(&read.user)?, read.session.clone());
         let response =
-            delete_user_callback_core(&query.token, &read.user, call, true, &self.config, ctx)
+            delete_user_callback_core(&query.token, &read.user, call, &self.config, ctx)
                 .await?;
         alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
         if let Some(url) = query.callback_url.filter(|url| !url.is_empty()) {
@@ -338,8 +338,8 @@ impl UserManagementPlugin {
             return Ok(AuthResponse::new(404).with_header("Content-Type", "application/json"));
         }
         let response = delete_user_core(&body, &user, &session, req, &self.config, ctx).await?;
-        let deleted =
-            response.message == "User deleted" && body.token.as_deref().is_none_or(str::is_empty);
+        // Deleting with a token also expires the caller's session cookies.
+        let deleted = response.message == "User deleted";
         let mut response = AuthResponse::json(200, &response)?;
         if deleted {
             append_clear_session_cookies(&mut response, &ctx.config)?;
@@ -369,7 +369,7 @@ impl UserManagementPlugin {
         }))
         .map_err(|_error| AuthError::bad_request("Verification token is required"))?;
         let response =
-            delete_user_callback_core(&query.token, &user, req, true, &self.config, ctx).await?;
+            delete_user_callback_core(&query.token, &user, req, &self.config, ctx).await?;
         if let Some(callback_url) = query.callback_url.filter(|url| !url.is_empty()) {
             let mut headers = alibi_core::Headers::new();
             _ = headers.insert("Location", callback_url);
@@ -498,8 +498,8 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
         }
         let body: DeleteUserRequest = call.body_as()?;
         let response = delete_user_core(&body, &user, &session, call, &self.config, ctx).await?;
-        let deleted =
-            response.message == "User deleted" && body.token.as_deref().is_none_or(str::is_empty);
+        // Deleting with a token also expires the caller's session cookies.
+        let deleted = response.message == "User deleted";
         if deleted {
             alibi_core::session::cookie_cache::runtime::clear_session_cookies(ctx, call)?;
         }

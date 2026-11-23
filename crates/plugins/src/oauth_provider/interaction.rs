@@ -13,6 +13,26 @@ struct InteractionState {
     signed_query: String,
 }
 
+pub(crate) fn admitted_query(extensions: &RequestExtensions) -> Option<String> {
+    extensions
+        .get::<InteractionState>()
+        .map(|state| state.signed_query.clone())
+}
+
+pub(crate) fn restore_admitted_query(extensions: &RequestExtensions, signed_query: String) {
+    extensions.insert(InteractionState { signed_query });
+}
+
+pub(super) fn retain_login_headers(resumed: &mut EndpointResponse, headers: Headers) {
+    let mut retained = Headers::new();
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("location") {
+            retained.append(name, value);
+        }
+    }
+    resumed.prepend_headers(retained);
+}
+
 struct InteractionRequest<'a, R> {
     original: &'a R,
     headers: HashMap<String, String>,
@@ -99,9 +119,7 @@ pub(super) fn admit(
     };
     let query = query_text(input)?;
     if super::authorization::verify_authorization_query(&query, secret)? {
-        extensions.insert(InteractionState {
-            signed_query: query,
-        });
+        restore_admitted_query(extensions, query);
         return Ok(None);
     }
     Ok(Some(super::authorization::invalid_signature()?))
@@ -136,7 +154,7 @@ impl<S: AuthSchema> EndpointHook<S> for OAuthProviderPlugin {
         let Some(mut resumed) = resume(self, call, response.headers(), ctx).await? else {
             return Ok(response);
         };
-        resumed.merge_headers(response.headers().clone());
+        retain_login_headers(&mut resumed, response.headers().clone());
         Ok(resumed)
     }
 }

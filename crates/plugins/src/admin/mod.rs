@@ -1059,6 +1059,56 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn admin_creation_rejected_password_leaves_no_user_and_allows_retry() {
+            struct RejectingHasher;
+            #[async_trait::async_trait]
+            impl alibi_core::PasswordHasher for RejectingHasher {
+                async fn hash(&self, password: &str) -> AuthResult<String> {
+                    if password == "rejected-password" {
+                        return Err(AuthError::bad_request("rejected by hasher"));
+                    }
+                    Ok(format!("hashed:{password}"))
+                }
+                async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+                    Ok(hash == format!("hashed:{password}"))
+                }
+            }
+            let (mut ctx, _, _, _, _) = create_admin_context().await;
+            ctx.extensions.insert(crate::EmailPasswordConfig {
+                password_hasher: Some(Arc::new(RejectingHasher)),
+                ..Default::default()
+            });
+            let email = "hash-first@fixture.test";
+            let mut input = types::CreateUserRequest::new(email, "Hash First");
+            input.password = Some("rejected-password".into());
+            let error = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap_err();
+            assert_eq!(error.to_string(), "rejected by hasher", "{error:?}");
+            assert!(
+                ctx.database
+                    .get_user_by_email(&alibi_core::utils::json::JsString::from(email))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+
+            input.password = Some("accepted-password".into());
+            let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            assert_eq!(created.user.email.as_deref(), Some(email));
+            let accounts = ctx
+                .database
+                .get_user_accounts(&created.user.id)
+                .await
+                .unwrap();
+            assert_eq!(accounts.len(), 1);
+            assert_eq!(accounts[0].provider_id(), "credential");
+            assert_eq!(accounts[0].password(), Some("hashed:accepted-password"));
+        }
+
+        #[tokio::test]
         async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence() {
             use alibi_core::{AuthSchema, AuthUser, CacheAdapter};
             let (ctx, _, _, user, _) = create_admin_context().await;

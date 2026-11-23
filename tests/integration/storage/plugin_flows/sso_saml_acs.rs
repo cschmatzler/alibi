@@ -9,6 +9,7 @@ use alibi::{
 };
 backend_tests!(
     sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay,
+    sso_saml_assertion_window_uses_default_clock_skew,
     sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute,
     sso_saml_acs_uses_xml_idp_authority_and_signing_certificate,
     sso_saml_encrypted_assertions_require_trusted_signatures_and_prevent_replay,
@@ -40,6 +41,9 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
     db: Db,
 ) -> TestResult {
     acs_flow::<B>(db, AcsCase::Manual).await
+}
+async fn sso_saml_assertion_window_uses_default_clock_skew<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::ClockSkew).await
 }
 async fn sso_saml_acs_uses_xml_idp_authority_and_signing_certificate<B: Backend>(
     db: Db,
@@ -169,6 +173,7 @@ enum AcsCase {
     EncryptionPolicy(&'static str),
     UnsupportedLegacySignature,
     Manual,
+    ClockSkew,
     IdpXml,
     Encrypted,
     EncryptedKey,
@@ -192,7 +197,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     let signature_denied = matches!(case, AcsCase::UnsupportedLegacySignature);
     let encrypted = !matches!(
         case,
-        AcsCase::Manual | AcsCase::IdpXml | AcsCase::UnsupportedLegacySignature
+        AcsCase::Manual | AcsCase::ClockSkew | AcsCase::IdpXml | AcsCase::UnsupportedLegacySignature
     );
 
     let policy_mode = if let AcsCase::EncryptionPolicy(mode) = case {
@@ -323,6 +328,19 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
                 email,
                 wrong_key,
             )?
+        } else if matches!(case, AcsCase::ClockSkew) && !wrong_key {
+            let field = if http { "NotOnOrAfter" } else { "NotBefore" };
+            let minutes = if http { -2 } else { 2 };
+            let boundary = (chrono::Utc::now() + chrono::Duration::minutes(minutes))
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            idp::custom_grant(authorization.as_str(), email, |mut xml| {
+                let conditions = xml.find("<saml:Conditions").unwrap();
+                let attribute = format!("{field}=\"");
+                let start = conditions + xml[conditions..].find(&attribute).unwrap() + attribute.len();
+                let end = start + xml[start..].find('"').unwrap();
+                xml.replace_range(start..end, &boundary);
+                xml
+            })?
         } else {
             idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?
         };

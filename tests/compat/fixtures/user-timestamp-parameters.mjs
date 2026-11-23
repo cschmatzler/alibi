@@ -12,10 +12,10 @@ const stringResult = process.argv[2] === "--hooks-string";
 const hooks = process.argv[2] === "--hooks" || stringResult;
 assert.ok(process.argv[2] === undefined || hooks, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const sqlite = new DatabaseSync(":memory:");
@@ -76,7 +76,7 @@ try {
     profiles.push({ backend, schema_sql: schemaSql, cases });
   }
   const filename = stringResult ? "user-timestamp-hooks-string" : hooks ? "user-timestamp-hooks" : "user-timestamp-parameters";
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.27", profiles }) + "\n");
   console.log("Eight actual SQLite/PostgreSQL user timestamp parameter and direct unban cases");
 } finally {
   await sqliteDb.destroy();

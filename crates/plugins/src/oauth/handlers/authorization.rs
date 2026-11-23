@@ -55,6 +55,10 @@ pub(in crate::oauth::handlers) fn generate_pkce() -> (String, String) {
     (verifier, challenge)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Mirror the published createAuthorizationURL inputs"
+)]
 pub(in crate::oauth::handlers) fn build_authorization_url(
     provider: &OAuthProvider,
     callback_url: &str,
@@ -63,6 +67,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
     code_challenge: &str,
     login_hint: Option<&str>,
     additional_params: Option<&std::collections::BTreeMap<String, String>>,
+    nonce: Option<&str>,
 ) -> AuthResult<String> {
     if provider
         .authorization
@@ -143,8 +148,11 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
 
     let mut url = url::Url::parse(&provider.auth_url)
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
+    // Parameters Alibi sets are collected separately, so the endpoint's own
+    // query text is kept as published instead of being re-encoded.
+    let mut params = Vec::new();
     set_authorization_param(
-        &mut url,
+        &mut params,
         "response_type",
         provider
             .authorization
@@ -152,7 +160,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .map_or("code", |policy| policy.response_type.as_str()),
     );
     set_authorization_param(
-        &mut url,
+        &mut params,
         provider
             .authorization
             .as_ref()
@@ -163,7 +171,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .and_then(|policy| policy.literal_client_id.as_deref())
             .unwrap_or(&provider.client_id),
     );
-    set_authorization_param(&mut url, "state", state);
+    set_authorization_param(&mut params, "state", state);
     if provider.authorization.is_none()
         || !effective_scopes.is_empty()
         || provider
@@ -171,10 +179,10 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .as_ref()
             .is_some_and(|policy| policy.emit_empty_scope)
     {
-        set_authorization_param(&mut url, "scope", &scope_str);
+        set_authorization_param(&mut params, "scope", &scope_str);
     }
     set_authorization_param(
-        &mut url,
+        &mut params,
         "redirect_uri",
         provider
             .authorization
@@ -189,8 +197,8 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .as_ref()
             .is_none_or(|policy| policy.pkce)
     {
-        set_authorization_param(&mut url, "code_challenge_method", "S256");
-        set_authorization_param(&mut url, "code_challenge", code_challenge);
+        set_authorization_param(&mut params, "code_challenge_method", "S256");
+        set_authorization_param(&mut params, "code_challenge", code_challenge);
     }
     if let Some(policy) = &provider.authorization {
         if let Some(mode) = policy
@@ -198,7 +206,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .as_deref()
             .filter(|mode| !mode.is_empty())
         {
-            set_authorization_param(&mut url, "response_mode", mode);
+            set_authorization_param(&mut params, "response_mode", mode);
         }
         if let Some(prompt) = policy
             .prompt
@@ -206,7 +214,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .filter(|prompt| !prompt.is_empty())
             .or(policy.default_prompt.as_deref())
         {
-            set_authorization_param(&mut url, "prompt", prompt);
+            set_authorization_param(&mut params, "prompt", prompt);
         }
         if effective_scopes.contains(&"bot")
             && let Some(permissions) = policy.discord_permissions
@@ -222,7 +230,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
                     .ok_or_else(|| AuthError::internal("Invalid Discord permissions number"))?;
                 alibi_core::utils::json::number_to_string(&number)?
             };
-            set_authorization_param(&mut url, "permissions", &value);
+            set_authorization_param(&mut params, "permissions", &value);
         }
     }
     if let Some(login_hint) = login_hint.filter(|hint| {
@@ -231,78 +239,92 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .as_ref()
             .is_none_or(|policy| policy.login_hint && !hint.is_empty())
     }) {
-        set_authorization_param(&mut url, "login_hint", login_hint);
+        set_authorization_param(&mut params, "login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
         if RESERVED_AUTHORIZATION_PARAMS.contains(&key.as_str()) {
             continue;
         }
-        set_authorization_param(&mut url, key, value);
+        set_authorization_param(&mut params, key, value);
     }
-    if let Some(params) = additional_params {
-        for (key, value) in params {
+    if let Some(additional) = additional_params {
+        for (key, value) in additional {
             if provider.authorization.as_ref().is_some_and(|policy| {
                 policy.client_id_parameter != "client_id" && key == &policy.client_id_parameter
             }) {
                 continue;
             }
-            set_authorization_param(&mut url, key, value);
+            set_authorization_param(&mut params, key, value);
         }
     }
     if let Some(policy) = &provider.authorization {
         for (key, value) in &policy.fixed_authorization_params {
-            set_authorization_param(&mut url, key, value);
-        }
-        if let Some(fragment) = &policy.authorization_fragment {
-            url.set_fragment(Some(fragment));
+            set_authorization_param(&mut params, key, value);
         }
     }
-    if provider.authorization.as_ref().is_some_and(|policy| {
+    if let Some(nonce) = nonce {
+        set_authorization_param(&mut params, "nonce", nonce);
+    }
+    let encode_scope = provider.authorization.as_ref().is_some_and(|policy| {
         matches!(
             policy.scope_encoding,
             crate::oauth::providers::OAuthScopeEncoding::UriComponent
         )
-    }) && let Some(scope) = url
-        .query_pairs()
-        .find_map(|(key, value)| (key == "scope").then(|| value.into_owned()))
-        .filter(|value| !value.is_empty())
+    });
+    with_query_params(&mut url, &params, encode_scope);
+    if let Some(fragment) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.authorization_fragment.as_deref())
     {
-        let existing: Vec<_> = url
-            .query_pairs()
-            .filter(|(key, _)| key != "scope")
-            .map(|(key, value)| (key.into_owned(), value.into_owned()))
-            .collect();
-        _ = url.query_pairs_mut().clear().extend_pairs(existing);
-        let encoded = alibi_core::utils::javascript::encode_uri_component(&scope);
-        let query = format!("{}&scope={encoded}", url.query().unwrap_or_default());
-        url.set_query(Some(&query));
+        url.set_fragment(Some(fragment));
     }
     Ok(url.to_string())
 }
 
-// URLSearchParams.set replaces duplicate values at the first occurrence;
-// unrelated application-owned endpoint parameters retain their order.
-pub(in crate::oauth::handlers) fn set_authorization_param(
-    url: &mut url::Url,
-    key: &str,
-    value: &str,
-) {
-    let mut replaced = false;
-    let mut pairs = Vec::new();
-    for (name, previous) in url.query_pairs() {
-        if name == key {
-            if !replaced {
-                pairs.push((key.to_owned(), value.to_owned()));
-                replaced = true;
-            }
-        } else {
-            pairs.push((name.into_owned(), previous.into_owned()));
-        }
+// URLSearchParams.set replaces duplicate values at the first occurrence.
+fn set_authorization_param(params: &mut Vec<(String, String)>, key: &str, value: &str) {
+    if let Some((_, previous)) = params.iter_mut().find(|(name, _)| name == key) {
+        value.clone_into(previous);
+    } else {
+        params.push((key.to_owned(), value.to_owned()));
     }
-    if !replaced {
-        pairs.push((key.to_owned(), value.to_owned()));
+}
+
+/// Adds `params` to the endpoint's query and removes the pairs they replace.
+/// The rest of the query keeps its original text, including empty segments,
+/// because re-serializing it would change its encoding, such as `%20` to `+`,
+/// and break providers that sign the query.
+fn with_query_params(url: &mut url::Url, params: &[(String, String)], encode_scope: bool) {
+    let mut segments: Vec<String> = url
+        .query()
+        .filter(|query| !query.is_empty())
+        .map(|query| {
+            query
+                .split('&')
+                .filter(|pair| {
+                    pair.is_empty()
+                        || !url::form_urlencoded::parse(pair.as_bytes())
+                            .next()
+                            .is_some_and(|(name, _)| params.iter().any(|(key, _)| *key == name))
+                })
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let uri_scope = |key: &str, value: &str| encode_scope && key == "scope" && !value.is_empty();
+    let added = url::form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(params.iter().filter(|(key, value)| !uri_scope(key, value)))
+        .finish();
+    if !added.is_empty() {
+        segments.push(added);
     }
-    _ = url.query_pairs_mut().clear().extend_pairs(pairs);
+    if let Some((_, scope)) = params.iter().find(|(key, value)| uri_scope(key, value)) {
+        let encoded = alibi_core::utils::javascript::encode_uri_component(scope);
+        segments.push(format!("scope={encoded}"));
+    }
+    let search = segments.join("&");
+    url.set_query((!search.is_empty()).then_some(search.as_str()));
 }
 
 pub(in crate::oauth) fn validate_authorization_params(
@@ -540,7 +562,7 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         alibi_core::OAuthStateStrategy::Cookie => {}
     }
 
-    let mut url = build_authorization_url(
+    let url = build_authorization_url(
         request.provider,
         &format!(
             "{}{}",
@@ -555,13 +577,8 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         &code_challenge,
         request.login_hint,
         Some(&additional_params),
+        payload.id_token_nonce.as_deref(),
     )?;
-    if let Some(nonce) = &payload.id_token_nonce {
-        let mut parsed = url::Url::parse(&url)
-            .map_err(|_| AuthError::config("Invalid authorization endpoint"))?;
-        set_authorization_param(&mut parsed, "nonce", nonce);
-        url = parsed.to_string();
-    }
 
     Ok(InitiatedOAuthFlow {
         response: SocialSignInResponse {
@@ -601,6 +618,7 @@ mod tests {
                 "challenge",
                 None,
                 None,
+                None,
             );
             assert_eq!(result.is_ok(), !client_id.is_empty());
             if client_id.is_empty() {
@@ -632,6 +650,7 @@ mod tests {
                 "",
                 None,
                 None,
+                None,
             );
             assert!(
                 result
@@ -645,6 +664,7 @@ mod tests {
                 None,
                 "state",
                 "challenge",
+                None,
                 None,
                 None,
             )
@@ -667,6 +687,7 @@ mod tests {
                 "",
                 None,
                 None,
+                None,
             )
             .unwrap_err();
             assert!(
@@ -675,6 +696,92 @@ mod tests {
                     .contains("Client ID and client secret are required")
             );
         }
+    }
+
+    fn endpoint_url(endpoint: &str, prompt: Option<&str>, additional: &[(&str, &str)]) -> String {
+        let mut provider = provider();
+        endpoint.clone_into(&mut provider.auth_url);
+        provider.authorization.as_mut().unwrap().prompt = prompt.map(str::to_owned);
+        let additional = additional
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        let result = build_authorization_url(
+            &provider,
+            "https://app/callback",
+            None,
+            "state-xyz",
+            "challenge",
+            None,
+            Some(&additional),
+            None,
+        )
+        .unwrap();
+        let url = url::Url::parse(&result).unwrap();
+        url.query().map(|query| format!("?{query}")).unwrap_or_default()
+    }
+
+    fn all(search: &str, name: &str) -> Vec<String> {
+        url::form_urlencoded::parse(search.strip_prefix('?').unwrap_or(search).as_bytes())
+            .filter(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+            .collect()
+    }
+
+    // Upstream: packages/core/src/oauth2/create-authorization-url.test.ts (#12572, #12620).
+    #[test]
+    fn authorization_keeps_the_endpoint_query_text() {
+        let search = endpoint_url(
+            "https://idp.example/authorize?tenant=acme%20inc&value=~",
+            None,
+            &[],
+        );
+        assert!(search.starts_with("?tenant=acme%20inc&value=~&"), "{search}");
+        assert_eq!(all(&search, "client_id"), ["client"]);
+
+        let search = endpoint_url(
+            "https://idp.example/authorize?tenant=acme&&value=~&&prompt=login",
+            Some("consent"),
+            &[],
+        );
+        assert!(
+            search
+                .strip_prefix("?tenant=acme&&value=~&&")
+                .is_some_and(|rest| !rest.starts_with('&')),
+            "{search}"
+        );
+        assert_eq!(all(&search, "prompt"), ["consent"]);
+
+        let search = endpoint_url(
+            "https://idp.example/authorize?prompt=login&",
+            Some("consent"),
+            &[],
+        );
+        assert!(search.starts_with("?&") && !search.starts_with("?&&"), "{search}");
+        assert_eq!(all(&search, "prompt"), ["consent"]);
+
+        let search = endpoint_url(
+            "https://idp.example/authorize?tenant=acme&?",
+            None,
+            &[("?", "new")],
+        );
+        assert_eq!(all(&search, "?"), ["new"]);
+        assert!(
+            search.starts_with("?tenant=acme&") && !search.starts_with("?tenant=acme&&"),
+            "{search}"
+        );
+
+        let search = endpoint_url("https://idp.example/authorize??state=stale", None, &[]);
+        assert!(search.starts_with("??state=stale&"), "{search}");
+        assert_eq!(all(&search, "state"), ["state-xyz"]);
+
+        let search = endpoint_url(
+            "https://idp.example/authorize?prompt=login&tenant=acme%20inc",
+            Some("consent"),
+            &[],
+        );
+        assert_eq!(all(&search, "prompt"), ["consent"]);
+        assert!(search.starts_with("?tenant=acme%20inc&"), "{search}");
     }
 
     #[test]
@@ -687,6 +794,7 @@ mod tests {
                 None,
                 "state",
                 challenge,
+                None,
                 None,
                 None,
             )

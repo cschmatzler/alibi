@@ -114,7 +114,7 @@ compatScenario(
       Array(2).fill({
         url: "https://client.fixture.test/jwks",
         accept: "application/json",
-        redirect: "error",
+        redirect: "manual",
         aborted: false,
       }),
     );

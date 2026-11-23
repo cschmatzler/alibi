@@ -179,7 +179,7 @@ mod tests {
         use super::super::admission_tests::HttpFixture;
         use alibi_core::utils::json;
         let fixture = json::parse_value(include_str!("discord_image_cases.json")).unwrap();
-        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_auth"], "1.7.27");
         let cases = fixture["cases"].as_array().unwrap();
         assert_eq!(cases.len(), 56);
         for case in cases {

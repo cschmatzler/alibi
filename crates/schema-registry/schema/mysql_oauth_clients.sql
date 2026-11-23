@@ -1,4 +1,4 @@
--- Generated from Better Auth 1.7.18 by mysql-schema-assets.mjs.
+-- Generated from Better Auth 1.7.27 by mysql-schema-assets.mjs.
 
 create table `oauthClient` (`id` varchar(36) not null primary key, `clientId` varchar(255) not null unique, `clientSecret` text, `clientDiscoveryId` text, `disabled` boolean, `skipConsent` boolean, `enableEndSession` boolean, `subjectType` text, `scopes` json, `clientCredentialsScopes` json, `userId` varchar(36) references `user` (`id`) on delete cascade, `createdAt` timestamp(3), `updatedAt` timestamp(3), `name` text, `uri` text, `icon` text, `contacts` json, `tos` text, `policy` text, `softwareId` text, `softwareVersion` text, `softwareStatement` text, `redirectUris` json not null, `postLogoutRedirectUris` json, `backchannelLogoutUri` text, `backchannelLogoutSessionRequired` boolean, `tokenEndpointAuthMethod` text, `applicationType` text, `jwks` text, `jwksUri` text, `grantTypes` json, `responseTypes` json, `requirePKCE` boolean, `dpopBoundAccessTokens` boolean, `referenceId` text, `metadata` json);
 

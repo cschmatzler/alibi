@@ -43,7 +43,7 @@ async fn check(asynchronous: bool, operation: &str, compatible: bool) -> TestRes
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../../fixtures/session-timestamp-hooks-string-mysql.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(fixture["backend"], "mysql");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 4);

@@ -278,14 +278,15 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         )
         .await;
         assert_eq!(db.tables(&["organization", "member"]).await?, before);
-        assert!(
+        assert_eq!(
             db.text(
                 "SELECT \"activeOrganizationId\" FROM \"session\" WHERE \"token\"=$1",
                 &[&token]
             )
             .await?
-            .is_none(),
-            "selection clearing precedes the veto"
+            .as_deref(),
+            Some("hook-organization"),
+            "a vetoed deletion keeps the selection"
         );
         assert_eq!(*callbacks.events.lock().unwrap(), vec!["before-delete"]);
         let _ = call(
@@ -3322,7 +3323,6 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
         200,
     )
     .await;
-    let token = body(&owner)["token"].as_str().unwrap().to_owned();
     _ = db.execute("PRAGMA foreign_keys=OFF", &[]).await?;
     _ = db
         .execute("DELETE FROM \"organization\" WHERE id=$1", &[&id])
@@ -3331,7 +3331,7 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
     let stable = db
         .tables(&["user", "account", "member", "team", "teamMember"])
         .await?;
-    let before: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
+    let before = db.table("session").await?;
     let rejected = call(
         &auth,
         request(
@@ -3344,23 +3344,8 @@ async fn organization_orphan_delete_selection<B: Backend>(db: Db) -> TestResult 
     .await;
     assert!(rejected.body.is_empty());
     assert!(cookies(&rejected).is_empty());
-    let after: Vec<Value> = serde_json::from_str(&db.table("session").await?)?;
-    assert_eq!(after.len(), before.len());
-    for row in before {
-        let actual = after
-            .iter()
-            .find(|candidate| candidate["id"] == row["id"])
-            .unwrap();
-        if row["token"] == token {
-            assert!(actual["activeOrganizationId"].is_null());
-            assert_eq!(actual["activeTeamId"], row["activeTeamId"]);
-            for field in ["token", "userId", "expiresAt", "createdAt"] {
-                assert_eq!(actual[field], row[field]);
-            }
-        } else {
-            assert_eq!(actual, &row);
-        }
-    }
+    // ec3047da8 leaves both sessions intact when no organization was deleted.
+    assert_eq!(db.table("session").await?, before);
     assert_eq!(
         db.tables(&["user", "account", "member", "team", "teamMember"])
             .await?,
@@ -4277,7 +4262,11 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
         before
     );
     let held = auth.store().get_session(&token).await?.unwrap();
-    assert_eq!(held.active_organization_id(), None);
+    assert_eq!(
+        held.active_organization_id(),
+        original_session.active_organization_id(),
+        "the selection is cleared only after the organization is deleted"
+    );
     assert_eq!(held.active_team_id(), original_session.active_team_id());
     assert_eq!(
         serde_json::to_value(auth.store().get_session(&sibling_token).await?.unwrap())?,
@@ -4288,6 +4277,9 @@ async fn organization_deletion_before_await_boundary<B: Backend>(db: Db) -> Test
     assert_eq!(deleted.status, 200);
     assert_eq!(body(&deleted)["name"], "Original Organization");
     assert_eq!(hooks.contexts.lock().unwrap().len(), 2);
+    let cleared = auth.store().get_session(&token).await?.unwrap();
+    assert_eq!(cleared.active_organization_id(), None);
+    assert_eq!(cleared.active_team_id(), original_session.active_team_id());
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"organization\" WHERE id=$1",

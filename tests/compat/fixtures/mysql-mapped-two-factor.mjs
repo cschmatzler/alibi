@@ -43,7 +43,7 @@ try {
   assert.equal(remaining[0].total, 0);
   assert.equal(cases.length, 5);
   await writeFile(new URL("../../fixtures/mysql-mapped-factor-schema.sql", import.meta.url), sql + "\n");
-  await writeFile(new URL("../../fixtures/mysql-mapped-factor.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", fields, cases }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-mapped-factor.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", fields, cases }) + "\n");
   console.log(`${cases.length} actual MySQL HTTP responses with mapped two-factor storage`);
 } finally {
   await database.close();

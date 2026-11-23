@@ -123,7 +123,7 @@ async fn check<S: AuthSchema>(
     } else {
         include_str!("../../fixtures/postgres-user-jsonb-values.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {

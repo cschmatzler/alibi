@@ -168,12 +168,14 @@ impl<S: AuthSchema> AuthContext<S> {
             config
         };
         let email_provider = config.email_provider.clone();
+        let mut extensions = ContextExtensions::default();
+        extensions.insert(crate::verification::VerificationCleanupSchedule::default());
         Self {
             config,
             database,
             email_provider,
             metadata,
-            extensions: ContextExtensions::default(),
+            extensions,
         }
     }
 
@@ -187,7 +189,11 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     #[must_use]
-    pub fn with_extensions(mut self, extensions: ContextExtensions) -> Self {
+    pub fn with_extensions(mut self, mut extensions: ContextExtensions) -> Self {
+        let schedule = self
+            .extensions
+            .cloned_or_default::<crate::verification::VerificationCleanupSchedule>();
+        extensions.insert(schedule);
         self.extensions = extensions;
         self
     }

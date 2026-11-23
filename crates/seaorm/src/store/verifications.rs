@@ -196,6 +196,20 @@ where
             }
         }
         let id = S::Verification::parse_id(model.id().as_ref())?;
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            // Remove stale generations before spending the selected row.
+            .filter(S::Verification::id_column().ne(id.clone()))
+            // An insert after the selected generation remains available.
+            .filter(
+                S::Verification::created_at_column().lte(crate::schema::timestamp_value(
+                    S::Verification::created_at_column(),
+                    model.created_at(),
+                )),
+            )
+            .exec(transaction)
+            .await
+            .map_err(map_db_err)?;
         let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
             .filter(S::Verification::id_column().eq(id))
             .filter(S::Verification::value_column().eq(model.value()))
@@ -205,12 +219,63 @@ where
         if deleted.rows_affected != 1 {
             return Ok(None);
         }
-        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-            .filter(S::Verification::identifier_column().eq(identifier))
-            .exec(transaction)
+        Ok(Some(model))
+    }
+
+    /// Delete expired rows, of one identifier when given, through
+    /// `deleteManyWithHooks`.
+    async fn delete_expired_verifications_matching(
+        &self,
+        identifier: Option<&str>,
+    ) -> AuthResult<usize> {
+        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
+        // deadline equals the current millisecond, including zero-TTL OTPs.
+        let deadline = Utc::now().trunc_subsecs(3);
+        let expired = || {
+            let mut condition = sea_orm::Condition::all().add(
+                S::Verification::expires_at_column().lt(crate::schema::timestamp_value(
+                    S::Verification::expires_at_column(),
+                    deadline,
+                )),
+            );
+            if let Some(identifier) = identifier {
+                condition = condition.add(S::Verification::identifier_column().eq(identifier));
+            }
+            condition
+        };
+        let snapshots = <S::Verification as SeaOrmVerificationModel>::Entity::find()
+            .filter(expired())
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
-        Ok(Some(model))
+        let hook_context = self.hook_context(None);
+        // deleteManyWithHooks snapshots a findMany page before mutation.
+        // Any before-hook veto cancels the entire batch, including rows whose
+        // callbacks already ran; after hooks receive those original snapshots.
+        for model in &snapshots {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_verification(model, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(0);
+                }
+            }
+        }
+        let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(expired())
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        for model in &snapshots {
+            for hook in self.hooks() {
+                hook.after_delete_verification(model, &hook_context).await?;
+            }
+        }
+        usize::try_from(deleted.rows_affected)
+            .map_err(|_error| AuthError::internal("Verification cleanup count overflow"))
     }
 }
 
@@ -324,6 +389,23 @@ where
             .filter(S::Verification::identifier_column().eq(identifier))
             .order_by_desc(S::Verification::created_at_column())
             .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+    }
+
+    async fn list_verifications_by_identifier(
+        &self,
+        identifier: &str,
+        limit: u32,
+        offset: u32,
+    ) -> AuthResult<Vec<S::Verification>> {
+        <S::Verification as SeaOrmVerificationModel>::Entity::find()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            .order_by_desc(S::Verification::created_at_column())
+            .order_by_desc(S::Verification::id_column())
+            .limit(u64::from(limit))
+            .offset(u64::from(offset))
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -643,51 +725,14 @@ where
     }
 
     async fn delete_expired_verifications(&self) -> AuthResult<usize> {
-        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
-        // deadline equals the current millisecond, including zero-TTL OTPs.
-        let deadline = Utc::now().trunc_subsecs(3);
-        let snapshots = <S::Verification as SeaOrmVerificationModel>::Entity::find()
-            .filter(
-                S::Verification::expires_at_column().lt(crate::schema::timestamp_value(
-                    S::Verification::expires_at_column(),
-                    deadline,
-                )),
-            )
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.scoped_connection())
+        self.delete_expired_verifications_matching(None).await
+    }
+
+    async fn delete_expired_verifications_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<usize> {
+        self.delete_expired_verifications_matching(Some(identifier))
             .await
-            .map_err(map_db_err)?;
-        let hook_context = self.hook_context(None);
-        // deleteManyWithHooks snapshots a findMany page before mutation.
-        // Any before-hook veto cancels the entire batch, including rows whose
-        // callbacks already ran; after hooks receive those original snapshots.
-        for model in &snapshots {
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_verification(model, &hook_context)
-                    .await?
-                    .is_cancelled()
-                {
-                    return Ok(0);
-                }
-            }
-        }
-        let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-            .filter(
-                S::Verification::expires_at_column().lt(crate::schema::timestamp_value(
-                    S::Verification::expires_at_column(),
-                    deadline,
-                )),
-            )
-            .exec(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
-        for model in &snapshots {
-            for hook in self.hooks() {
-                hook.after_delete_verification(model, &hook_context).await?;
-            }
-        }
-        usize::try_from(deleted.rows_affected)
-            .map_err(|_error| AuthError::internal("Verification cleanup count overflow"))
     }
 }

@@ -46,33 +46,54 @@ where
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
         self.in_transaction(true, async move |tx| {
-            let exec = Exec::tx(tx);
-            let owner = super::users::find_user_by_id::<S::User>(
-                exec,
-                &data.user_id,
-                super::users::Lock::Shared,
-            )
-            .await?
-            .ok_or(AuthError::UserNotFound)?;
-            let mut active = ActiveRow::new();
-            active.set(
-                "id",
-                self.generated_id(self.exec(), "walletAddress", "walletAddress", "id")
-                    .await?
-                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
-            );
-            active.set("userId", owner.id().into_owned());
-            active.set("address", data.address);
-            active.set(
-                "chainId",
-                WalletChainId::from(data.chain_id).into_sql_value(),
-            );
-            active.set("isPrimary", data.is_primary);
-            active.set("createdAt", Utc::now());
-            let created = model::insert::<wallet_address::Model>(exec, &active).await?;
-            Ok(created.into())
+            self.insert_wallet_address(Exec::tx(tx), self.exec(), data)
+                .await
         })
         .await
+    }
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema + Send + Sync,
+    S::User: SqlxUserModel,
+{
+    /// Validate the owner under a shared lock and insert the wallet on `exec`.
+    /// `ids` generates the row ID, so a caller's transaction can supply its own
+    /// connection instead of waiting for a second pooled one.
+    pub(super) async fn insert_wallet_address(
+        &self,
+        exec: Exec<'_>,
+        ids: Exec<'_>,
+        data: CreateWalletAddress,
+    ) -> AuthResult<WalletAddress> {
+        if !data.chain_id.is_finite() {
+            return Err(AuthError::bad_request("Wallet chain ID must be finite"));
+        }
+        let owner = super::users::find_user_by_id::<S::User>(
+            exec,
+            &data.user_id,
+            super::users::Lock::Shared,
+        )
+        .await?
+        .ok_or(AuthError::UserNotFound)?;
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            self.generated_id(ids, "walletAddress", "walletAddress", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
+        active.set("userId", owner.id().into_owned());
+        active.set("address", data.address);
+        active.set(
+            "chainId",
+            WalletChainId::from(data.chain_id).into_sql_value(),
+        );
+        active.set("isPrimary", data.is_primary);
+        active.set("createdAt", Utc::now());
+        let created = model::insert::<wallet_address::Model>(exec, &active).await?;
+        Ok(created.into())
     }
 }
 

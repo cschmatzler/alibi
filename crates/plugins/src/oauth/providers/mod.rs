@@ -115,7 +115,7 @@ impl OAuthConfig {
     }
 
     /// Retries discovery for a provider skipped at startup. Concurrent requests
-    /// share one attempt, and a failed attempt leaves the provider pending.
+    /// each make their own attempt. The first successful result is retained.
     pub(crate) async fn retry_discovery(&self, name: &str) {
         if let Some(deferred) = self.deferred.get(name) {
             deferred.retry().await;
@@ -292,7 +292,16 @@ pub trait OAuthUserInfoHandler: Send + Sync {
 }
 
 pub(crate) fn email_verified_claim(value: Option<&Value>) -> bool {
-    matches!(value, Some(Value::Bool(true))) || value.and_then(Value::as_str) == Some("true")
+    parse_string_boolean(value).unwrap_or(false)
+}
+
+fn parse_string_boolean(value: Option<&Value>) -> Option<bool> {
+    match value? {
+        Value::Bool(value) => Some(*value),
+        Value::String(value) if value == "true" => Some(true),
+        Value::String(value) if value == "false" => Some(false),
+        _ => None,
+    }
 }
 
 /// Asynchronous partial application mapping of the original provider profile.
@@ -429,6 +438,8 @@ pub struct OAuthProvider {
     pub map_user_info: Option<fn(Value) -> Result<Map, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,
+    /// Application values for declared account fields (`getAccountFields`).
+    pub get_account_fields: Option<OAuthAccountFields>,
     /// Application override takes precedence over the trusted built-in JWKS policy.
     pub verify_id_token: Option<Arc<dyn OAuthIdTokenVerifier>>,
     pub id_token: Option<super::id_token::OAuthIdTokenConfig>,
@@ -526,6 +537,42 @@ impl std::fmt::Debug for OAuthAccountKey {
     }
 }
 
+/// Supplies values for declared `account.additional_fields`, stored on the
+/// provider account when it is created, linked, or updated at sign-in
+/// (upstream `getAccountFields`).
+///
+/// Called only after the provider tokens and profile are verified; ID-token
+/// sign-in passes the tokens the client sent. The values are provider input:
+/// keys that are not declared account fields, fields marked read-only,
+/// `undefined` values and Alibi's own account columns (`id`, `userId`,
+/// `providerId`, `accountId`, token and scope columns, `password` and the
+/// timestamps) are ignored, and the remaining values pass through the field's
+/// validator. The store applies the field's input transform when it writes.
+/// Return `Ok(None)` to store nothing; a `null` value is stored as `null`.
+/// On sign-in the values are written only while
+/// `account.update_account_on_sign_in` is enabled.
+#[async_trait]
+pub trait OAuthAccountFieldsResolver: Send + Sync {
+    /// # Errors
+    /// An error with a code (`AuthError::Api` or `AuthError::Upstream`) fails
+    /// an OAuth callback with that code and message; any other error fails it
+    /// with `unable_to_get_user_info`. ID-token routes return the error.
+    async fn account_fields(
+        &self,
+        tokens: &OAuthTokenSet,
+        user: &OAuthUserInfo,
+    ) -> alibi_core::AuthResult<Option<Map>>;
+}
+
+/// Cloneable application `getAccountFields` hook.
+#[derive(Clone)]
+pub struct OAuthAccountFields(pub Arc<dyn OAuthAccountFieldsResolver>);
+impl std::fmt::Debug for OAuthAccountFields {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OAuthAccountFields(..)")
+    }
+}
+
 /// Immutable authorization configuration used by the built-in social providers.
 /// Scope entries retain their original order and whitespace; providers may
 /// opt into removing exact duplicates.
@@ -586,7 +633,11 @@ pub struct OAuthAuthorizationPolicy {
     /// Optional application client key sent in authorization-code forms only.
     pub authorization_code_client_key: Option<String>,
     /// Trusted provider headers applied to authorization-code grants only.
+    /// Client authentication headers replace a same-named header in any casing.
     pub authorization_code_headers: Vec<(String, String)>,
+    /// Trusted provider headers applied to default refresh-token grants only.
+    /// Client authentication headers replace a same-named header in any casing.
+    pub refresh_token_headers: Vec<(String, String)>,
     /// Trusted additional code-grant form fields (`tokenUrlParams`). Fields
     /// already supplied by the grant, including PKCE, are preserved. Token
     /// authentication is applied afterwards and retains credential authority.
@@ -693,6 +744,7 @@ impl Default for OAuthAuthorizationPolicy {
             fixed_authorization_params: Vec::new(),
             authorization_code_client_key: None,
             authorization_code_headers: Vec::new(),
+            refresh_token_headers: Vec::new(),
             authorization_code_params: std::collections::BTreeMap::new(),
             refresh_token_params: std::collections::BTreeMap::new(),
             refresh_token_params_resolver: None,
@@ -770,6 +822,14 @@ impl OAuthProvider {
         let mut ids = client_ids.into_iter();
         self.client_id = ids.next().unwrap_or_default();
         self.additional_client_ids = ids.collect();
+        self
+    }
+
+    /// Store application values for declared account fields on the provider
+    /// account (`getAccountFields`). See [`OAuthAccountFieldsResolver`].
+    #[must_use]
+    pub fn with_account_fields(mut self, resolver: Arc<dyn OAuthAccountFieldsResolver>) -> Self {
+        self.get_account_fields = Some(OAuthAccountFields(resolver));
         self
     }
 

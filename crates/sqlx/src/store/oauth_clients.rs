@@ -364,23 +364,21 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         Ok(())
     }
     async fn delete_oauth_refresh_family(&self, client_id: &str, user_id: &str) -> AuthResult<()> {
-        let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
-        sql.ident("oauthAccessToken");
-        sql.push(" WHERE ");
-        sql.ident("refreshId");
-        sql.push(" IN (SELECT id FROM ");
-        sql.ident("oauthRefreshToken");
-        sql.push(" WHERE ");
-        sql.compare("oauthRefreshToken", "clientId", " = ", client_id);
-        sql.push(" AND ");
-        sql.compare("oauthRefreshToken", "userId", " = ", user_id);
-        sql.push(" LIMIT ");
-        sql.bind(
-            i64::try_from(self.config().advanced.database.default_find_many_limit)
-                .unwrap_or(i64::MAX),
-        );
-        sql.push(")");
-        _ = self.exec().execute(sql).await?;
+        // Every access token linked to this family's refresh rows carries the
+        // same client and user, so no capped list of refresh ids is needed.
+        let delete_linked_access_tokens = || async {
+            let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+            sql.ident("oauthAccessToken");
+            sql.push(" WHERE ");
+            sql.compare("oauthAccessToken", "clientId", " = ", client_id);
+            sql.push(" AND ");
+            sql.compare("oauthAccessToken", "userId", " = ", user_id);
+            sql.push(" AND ");
+            sql.ident("refreshId");
+            sql.push(" IS NOT NULL");
+            self.exec().execute(sql).await.map(|_| ())
+        };
+        delete_linked_access_tokens().await?;
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident("oauthRefreshToken");
         sql.push(" WHERE ");
@@ -388,7 +386,8 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         sql.push(" AND ");
         sql.compare("oauthRefreshToken", "userId", " = ", user_id);
         _ = self.exec().execute(sql).await?;
-        Ok(())
+        // An in-flight issuance can store an access token between the deletes.
+        delete_linked_access_tokens().await
     }
     async fn create_oauth_token(
         &self,
@@ -537,6 +536,19 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             sql.push(" WHERE ");
             sql.compare(
                 super::entities::oauth_refresh_token::Model::TABLE,
+                "authorizationCodeId",
+                " = ",
+                code,
+            );
+            _ = self.exec().execute(sql).await?;
+        }
+        {
+            // An in-flight redemption can store an access token between the deletes.
+            let mut sql = crate::sql::Sql::with(self.exec().engine(), "DELETE FROM ");
+            sql.ident(super::entities::oauth_access_token::Model::TABLE);
+            sql.push(" WHERE ");
+            sql.compare(
+                super::entities::oauth_access_token::Model::TABLE,
                 "authorizationCodeId",
                 " = ",
                 code,

@@ -8,10 +8,10 @@ import { betterAuth } from "../reference-server/node_modules/better-auth/dist/in
 import { getMigrations } from "../reference-server/node_modules/better-auth/dist/db/get-migration.mjs";
 
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 const cases = [];
 const explicit = process.argv[2] === "--explicit-clock";
@@ -84,5 +84,5 @@ for (const persist of [false, true]) {
   }
 }
 const filename = postgres ? "session-secondary-postgres-clock" : explicit ? "session-secondary-explicit-clock" : "session-secondary-clock";
-await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", backend: postgres ? "postgres" : "sqlite", cases }) + "\n");
+await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.27", backend: postgres ? "postgres" : "sqlite", cases }) + "\n");
 console.log(`${cases.length} actual ${postgres ? "PostgreSQL" : "SQLite"} secondary-storage session update clock cases`);

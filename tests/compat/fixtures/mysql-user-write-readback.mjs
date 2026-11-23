@@ -23,7 +23,7 @@ try {
     assert.equal(old === null, Boolean(replacement));
     cases.push({ id, replacement, created: row, updated });
   }
-  await writeFile(new URL("../../fixtures/mysql-user-write-readback.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-user-write-readback.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
   console.log(`${cases.length} actual MySQL user insert and changed-ID update readbacks`);
 } finally {
   await database.close();

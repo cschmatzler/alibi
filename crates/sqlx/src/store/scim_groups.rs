@@ -2,6 +2,7 @@
 use super::{
     SqlxStore,
     entities::{scim_group as group, scim_group_member as member, scim_user as user},
+    scim_projection::{SCIM_ID_CHUNK_SIZE, fetch_scim_chunks},
 };
 use crate::{
     model::{self, ActiveRow},
@@ -43,23 +44,20 @@ impl<S: AuthSchema> SqlxStore<S> {
         connection: &str,
         ids: &[String],
     ) -> AuthResult<()> {
-        if !ids.is_empty() {
-            let mut sql = model::select_model::<user::Model>(exec);
-            sql.push(" WHERE ");
+        let owned = fetch_scim_chunks::<user::Model>(exec, ids, true, |sql, chunk| {
             sql.compare("scimUser", "connectionId", " = ", connection.to_owned());
             sql.push(" AND ");
             sql.column("scimUser", "id");
             sql.push(" IN ");
-            sql.bind_list(ids.iter().cloned());
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            if exec.fetch_all::<user::Model>(sql).await?.len() != ids.len() {
-                return Err(AuthError::Api {
-                    status: 400,
-                    code: None,
-                    message: "One or more Group members are invalid".into(),
-                });
-            }
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?;
+        if owned.len() != ids.len() {
+            return Err(AuthError::Api {
+                status: 400,
+                code: None,
+                message: "One or more Group members are invalid".into(),
+            });
         }
         Ok(())
     }
@@ -81,7 +79,7 @@ impl<S: AuthSchema> SqlxStore<S> {
             .filter(|member| !desired.contains(&member.scim_user_id))
             .map(|member| member.scim_user_id.clone())
             .collect::<Vec<_>>();
-        if !removed.is_empty() {
+        for chunk in removed.chunks(SCIM_ID_CHUNK_SIZE) {
             let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
             sql.ident("scimGroupMember");
             sql.push(" WHERE ");
@@ -96,7 +94,7 @@ impl<S: AuthSchema> SqlxStore<S> {
             sql.push(" AND ");
             sql.column("scimGroupMember", "scimUserId");
             sql.push(" IN ");
-            sql.bind_list(removed.iter().cloned());
+            sql.bind_list(chunk.iter().cloned());
             _ = exec.execute(sql).await?;
         }
         for member_id in desired {
@@ -238,25 +236,30 @@ impl<S: AuthSchema> SqlxStore<S> {
         group: &group::Model,
         targets: Option<&[String]>,
     ) -> AuthResult<Vec<member::Model>> {
-        let mut sql = model::select_model::<member::Model>(exec);
-        sql.push(" WHERE ");
-        sql.compare(
-            "scimGroupMember",
-            "connectionId",
-            " = ",
-            group.connection_id.clone(),
-        );
-        sql.push(" AND ");
-        sql.compare("scimGroupMember", "groupId", " = ", group.id.clone());
-        if let Some(targets) = targets {
+        let group_predicates = |sql: &mut Sql| {
+            sql.compare(
+                "scimGroupMember",
+                "connectionId",
+                " = ",
+                group.connection_id.clone(),
+            );
+            sql.push(" AND ");
+            sql.compare("scimGroupMember", "groupId", " = ", group.id.clone());
+        };
+        let Some(targets) = targets else {
+            let mut sql = model::select_model::<member::Model>(exec);
+            sql.push(" WHERE ");
+            group_predicates(&mut sql);
+            return exec.fetch_all::<member::Model>(sql).await;
+        };
+        fetch_scim_chunks::<member::Model>(exec, targets, true, |sql, chunk| {
+            group_predicates(sql);
             sql.push(" AND ");
             sql.column("scimGroupMember", "scimUserId");
             sql.push(" IN ");
-            sql.bind_list(targets.iter().cloned());
-        }
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        exec.fetch_all::<member::Model>(sql).await
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await
     }
     pub(super) async fn patch_scim_group_with_exec(
         &self,
@@ -461,8 +464,6 @@ impl<S: AuthSchema> SqlxStore<S> {
         sql.compare("scimGroupMember", "connectionId", " = ", connection);
         sql.push(" AND ");
         sql.compare("scimGroupMember", "groupId", " = ", id);
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
         let members = exec
             .fetch_all::<member::Model>(sql)
             .await?
@@ -528,29 +529,8 @@ impl<S: AuthSchema> SqlxStore<S> {
                 true,
             )
             .await?;
-        if !data.member_ids.is_empty() {
-            let mut sql = model::select_model::<user::Model>(exec);
-            sql.push(" WHERE ");
-            sql.compare(
-                "scimUser",
-                "connectionId",
-                " = ",
-                data.connection_id.clone(),
-            );
-            sql.push(" AND ");
-            sql.column("scimUser", "id");
-            sql.push(" IN ");
-            sql.bind_list(data.member_ids.iter().cloned());
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            if exec.fetch_all::<user::Model>(sql).await?.len() != data.member_ids.len() {
-                return Err(AuthError::Api {
-                    status: 400,
-                    code: None,
-                    message: "One or more Group members are invalid".into(),
-                });
-            }
-        }
+        self.validate_group_members_with_exec(exec, &data.connection_id, &data.member_ids)
+            .await?;
         for member_id in &data.member_ids {
             let mut row = ActiveRow::new();
             row.set(

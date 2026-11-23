@@ -1,7 +1,47 @@
 import { expect } from "vitest";
 import { z } from "zod";
 
+import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
+
+compatScenario(
+  "POST accepts an empty request stream without a Content-Type",
+  async (ctx) => {
+    const profile = "session-deferred";
+    const owner = ctx.actor("owner", profile);
+    const issued = await owner.client.signUp.email({
+      email: ctx.uniqueEmail("bodyless-session-post"),
+      name: "Session owner",
+      password: "password123",
+    });
+    expect(issued.error).toBeNull();
+    const post = (path: string) =>
+      owner.fetch(`${ctx.baseURL}${authProfilePath(profile)}/${path}`, {
+        method: "POST",
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.close();
+          },
+        }),
+      });
+    const refreshed = await post("get-session");
+    expect(refreshed.status).toBe(200);
+    const session = await refreshed.json();
+    expect(session.session.token).toBe(issued.data!.token);
+    const revoked = await post("revoke-sessions");
+    expect(revoked.status).toBe(200);
+    expect(await revoked.json()).toEqual({ status: true });
+    expect(revoked.headers.getSetCookie()).toEqual(
+      expect.arrayContaining([expect.stringMatching(/^better-auth[.]session_token=;.*Max-Age=0/)]),
+    );
+    const anonymous = await post("sign-out");
+    expect(anonymous.status).toBe(200);
+    const persisted = await ctx.readUserState({ userId: issued.data!.user.id });
+    expect(persisted).toMatchObject({ sessions: [] });
+    return ctx.snapshot({ session, persisted });
+  },
+  ["POST /get-session", "POST /revoke-sessions", "POST /sign-out"],
+);
 
 compatScenario("list sessions and revoke a session through the SDK", async (ctx) => {
   const first = ctx.actor("first");

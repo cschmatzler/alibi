@@ -1,5 +1,5 @@
 {
-  "referenceVersion": "better-auth@1.7.18",
+  "referenceVersion": "better-auth@1.7.27",
   "origin": "http://jwt-interoperability.fixture.test",
   "secret": "jwt-interoperability-fixture-secret-at-least-32chars",
   "payload": {

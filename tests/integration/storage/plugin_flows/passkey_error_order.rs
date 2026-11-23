@@ -62,7 +62,7 @@ async fn check_order<S: AuthSchema>(auth: &Alibi<S>, backend: &str, policy: Arc<
         "../../../../crates/plugins/src/passkey/registration_error_order_cases.json"
     ))
     .unwrap();
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let user_id = body(&signup(auth, "registration-order@example.com").await)["user"]["id"]
         .as_str()
         .unwrap()

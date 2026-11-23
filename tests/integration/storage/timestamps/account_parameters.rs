@@ -9,7 +9,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     let fixture: Value = serde_json::from_str(include_str!(
         "../../../fixtures/account-timestamp-parameters.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if raw.is_postgres() {
         "postgres"
     } else {

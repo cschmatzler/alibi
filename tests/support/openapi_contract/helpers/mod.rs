@@ -253,6 +253,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             }),
             get_user_info: Some(Arc::new(MockUserInfoHandler)),
             refresh_access_token: None,
+            get_account_fields: None,
             verify_id_token: None,
             id_token: None,
             disable_id_token_sign_in: false,

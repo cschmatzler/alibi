@@ -12,6 +12,33 @@ use alibi_core::{
     store::{ScimIdentitySource, ScimProjectedUserState, ScimProjectionPreparedUser},
 };
 use chrono::SubsecRound;
+/// Ids per `IN` list, like the reference's `chunkSCIMIds`; stays under legacy SQLite's 999 bound values.
+pub(super) const SCIM_ID_CHUNK_SIZE: usize = 500;
+/// Reads every row matching one `IN` predicate per id chunk. A bounded read caps each chunk at
+/// its length (the reference's `limit: chunk.length`); otherwise no limit applies, matching its
+/// `SCIM_UNBOUNDED_ROW_LIMIT` reads that bypass `defaultFindManyLimit`.
+pub(super) async fn fetch_scim_chunks<M: model::SqlxModel>(
+    exec: Exec<'_>,
+    ids: &[String],
+    bounded: bool,
+    predicates: impl Fn(&mut Sql, &[String]),
+) -> AuthResult<Vec<M>> {
+    let mut rows = Vec::new();
+    for chunk in ids.chunks(SCIM_ID_CHUNK_SIZE) {
+        let mut sql = model::select_model::<M>(exec);
+        sql.push(" WHERE ");
+        predicates(&mut sql, chunk);
+        if bounded {
+            sql.push(" LIMIT ");
+            sql.bind(
+                i64::try_from(chunk.len())
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+            );
+        }
+        rows.extend(exec.fetch_all::<M>(sql).await?);
+    }
+    Ok(rows)
+}
 impl<S: AuthSchema> SqlxStore<S> {
     pub(super) async fn scim_projection_user_ids_with_exec(
         &self,
@@ -23,16 +50,14 @@ impl<S: AuthSchema> SqlxStore<S> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sql = model::select_model::<user::Model>(exec);
-        sql.push(" WHERE ");
-        sql.compare("scimUser", "provisioningDomainId", " = ", domain);
-        sql.push(" AND ");
-        sql.column("scimUser", "id");
-        sql.push(" IN ");
-        sql.bind_list(ids.iter().cloned());
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        let requested = exec.fetch_all::<user::Model>(sql).await?;
+        let requested = fetch_scim_chunks::<user::Model>(exec, ids, true, |sql, chunk| {
+            sql.compare("scimUser", "provisioningDomainId", " = ", domain);
+            sql.push(" AND ");
+            sql.column("scimUser", "id");
+            sql.push(" IN ");
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?;
         let mut user_ids = Vec::new();
         for id in ids {
             if let Some(user) = requested.iter().find(|user| user.id == *id)
@@ -47,14 +72,13 @@ impl<S: AuthSchema> SqlxStore<S> {
         if lock {
             let mut sorted = user_ids.clone();
             sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
-            let mut sql = model::select_model::<subject::Model>(exec);
-            sql.push(" WHERE ");
-            sql.column("scimSubject", "userId");
-            sql.push(" IN ");
-            sql.bind_list(sorted.iter().cloned());
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            let subjects = exec.fetch_all::<subject::Model>(sql).await?;
+            let subjects =
+                fetch_scim_chunks::<subject::Model>(exec, &sorted, true, |sql, chunk| {
+                    sql.column("scimSubject", "userId");
+                    sql.push(" IN ");
+                    sql.bind_list(chunk.iter().cloned());
+                })
+                .await?;
             if subjects.len() != sorted.len() {
                 return Err(AuthError::internal(
                     "A SCIM User selected for projection has no subject aggregate.",
@@ -130,80 +154,52 @@ impl<S: AuthSchema> SqlxStore<S> {
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sql = model::select_model::<user::Model>(exec);
-        sql.push(" WHERE ");
-        sql.compare("scimUser", "provisioningDomainId", " = ", domain);
-        sql.push(" AND ");
-        sql.column("scimUser", "userId");
-        sql.push(" IN ");
-        sql.bind_list(user_ids.iter().cloned());
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        let users = exec.fetch_all::<user::Model>(sql).await?;
-        let connections = users
-            .iter()
-            .map(|user| user.connection_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let retired = if connections.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            let mut sql = model::select_model::<binding::Model>(exec);
-            sql.push(" WHERE ");
-            sql.column("scimConnectionBinding", "connectionId");
+        let users = fetch_scim_chunks::<user::Model>(exec, &user_ids, false, |sql, chunk| {
+            sql.compare("scimUser", "provisioningDomainId", " = ", domain);
+            sql.push(" AND ");
+            sql.column("scimUser", "userId");
             sql.push(" IN ");
-            sql.bind_list(connections);
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            exec.fetch_all::<binding::Model>(sql)
-                .await?
-                .into_iter()
-                .filter(|binding| binding.decommission_status != "active")
-                .map(|binding| binding.connection_id)
-                .collect::<std::collections::HashSet<_>>()
-        };
-        let mut sql = model::select_model::<grant::Model>(exec);
-        sql.push(" WHERE ");
-        sql.compare("scimProjectionGrant", "provisioningDomainId", " = ", domain);
-        sql.push(" AND ");
-        sql.column("scimProjectionGrant", "userId");
-        sql.push(" IN ");
-        sql.bind_list(user_ids.iter().cloned());
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        let grants = exec.fetch_all::<grant::Model>(sql).await?;
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?;
+        let retired =
+            retired_scim_connections(exec, users.iter().map(|user| user.connection_id.clone()))
+                .await?;
+        let grants = fetch_scim_chunks::<grant::Model>(exec, &user_ids, false, |sql, chunk| {
+            sql.compare("scimProjectionGrant", "provisioningDomainId", " = ", domain);
+            sql.push(" AND ");
+            sql.column("scimProjectionGrant", "userId");
+            sql.push(" IN ");
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?;
         let active_ids = users
             .iter()
             .filter(|user| user.active && !retired.contains(&user.connection_id))
             .map(|user| user.id.clone())
             .collect::<Vec<_>>();
-        let memberships = if roles && !active_ids.is_empty() {
-            let mut sql = model::select_model::<membership::Model>(exec);
-            sql.push(" WHERE ");
-            sql.column("scimGroupMember", "scimUserId");
-            sql.push(" IN ");
-            sql.bind_list(active_ids);
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            exec.fetch_all::<membership::Model>(sql).await?
+        let memberships = if roles {
+            fetch_scim_chunks::<membership::Model>(exec, &active_ids, false, |sql, chunk| {
+                sql.column("scimGroupMember", "scimUserId");
+                sql.push(" IN ");
+                sql.bind_list(chunk.iter().cloned());
+            })
+            .await?
         } else {
             Vec::new()
         };
         let group_ids = memberships
             .iter()
             .map(|member| member.group_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let groups = if group_ids.is_empty() {
-            Vec::new()
-        } else {
-            let mut sql = model::select_model::<group::Model>(exec);
-            sql.push(" WHERE ");
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let groups = fetch_scim_chunks::<group::Model>(exec, &group_ids, true, |sql, chunk| {
             sql.column("scimGroup", "id");
             sql.push(" IN ");
-            sql.bind_list(group_ids);
-            sql.push(" LIMIT ");
-            sql.bind(self.find_many_limit());
-            exec.fetch_all::<group::Model>(sql).await?
-        };
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?;
         user_ids
             .into_iter()
             .map(|user_id| -> AuthResult<ScimProjectionPreparedUser> {
@@ -311,20 +307,42 @@ impl<S: AuthSchema> SqlxStore<S> {
         user_id: &str,
         ids: &[String],
     ) -> AuthResult<()> {
-        if ids.is_empty() {
-            return Ok(());
+        for chunk in ids.chunks(SCIM_ID_CHUNK_SIZE) {
+            let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+            sql.ident("scimProjectionGrant");
+            sql.push(" WHERE ");
+            sql.compare("scimProjectionGrant", "provisioningDomainId", " = ", domain);
+            sql.push(" AND ");
+            sql.compare("scimProjectionGrant", "userId", " = ", user_id);
+            sql.push(" AND ");
+            sql.column("scimProjectionGrant", "id");
+            sql.push(" IN ");
+            sql.bind_list(chunk.iter().cloned());
+            _ = exec.execute(sql).await?;
         }
-        let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
-        sql.ident("scimProjectionGrant");
-        sql.push(" WHERE ");
-        sql.compare("scimProjectionGrant", "provisioningDomainId", " = ", domain);
-        sql.push(" AND ");
-        sql.compare("scimProjectionGrant", "userId", " = ", user_id);
-        sql.push(" AND ");
-        sql.column("scimProjectionGrant", "id");
-        sql.push(" IN ");
-        sql.bind_list(ids.iter().cloned());
-        _ = exec.execute(sql).await?;
         Ok(())
     }
+}
+/// Connections among `connections` whose binding is no longer active.
+pub(super) async fn retired_scim_connections(
+    exec: Exec<'_>,
+    connections: impl IntoIterator<Item = String>,
+) -> AuthResult<std::collections::HashSet<String>> {
+    let connections = connections
+        .into_iter()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    Ok(
+        fetch_scim_chunks::<binding::Model>(exec, &connections, true, |sql, chunk| {
+            sql.column("scimConnectionBinding", "connectionId");
+            sql.push(" IN ");
+            sql.bind_list(chunk.iter().cloned());
+        })
+        .await?
+        .into_iter()
+        .filter(|binding| binding.decommission_status != "active")
+        .map(|binding| binding.connection_id)
+        .collect(),
+    )
 }

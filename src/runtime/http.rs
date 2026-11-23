@@ -291,11 +291,29 @@ impl<S: AuthSchema> Alibi<S> {
         if (!core_route && plugin_route.is_none()) || internal_req.path().contains("//") {
             return Ok(AuthResponse::new(404));
         }
-        let allowed_media_types = plugin_route.as_ref().map_or_else(
-            || vec!["application/json"],
-            |(plugin, route)| plugin.allowed_media_types(route),
-        );
-        parse_dispatch_body(&internal_req, &allowed_media_types).await?;
+        let parses_body = plugin_route
+            .as_ref()
+            .is_none_or(|(plugin, route)| plugin.parses_body(route));
+        if parses_body {
+            let allowed_media_types = plugin_route.as_ref().map_or_else(
+                || vec!["application/json"],
+                |(plugin, route)| plugin.allowed_media_types(route),
+            );
+            // Hosts can pass a bodyless POST as an empty stream. Without a
+            // Content-Type, an empty stream is no body, not a media type error.
+            if !allowed_media_types.is_empty()
+                && internal_req.body.as_ref().is_some_and(Vec::is_empty)
+                && !internal_req
+                    .headers
+                    .iter()
+                    .any(|(key, value)| key.eq_ignore_ascii_case("content-type") && !value.is_empty())
+            {
+                internal_req.body = None;
+            }
+            parse_dispatch_body(&internal_req, &allowed_media_types).await?;
+        } else {
+            internal_req.body = None;
+        }
         self.request_protection
             .with_auth_config(Arc::clone(&context.config))
             .check_request_origin(&internal_req)?;

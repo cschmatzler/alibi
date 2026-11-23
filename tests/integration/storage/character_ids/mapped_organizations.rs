@@ -455,6 +455,25 @@ async fn exercise(db: Db) -> TestResult {
     _ = store
         .update_session_active_organization(guest_session.token(), None)
         .await?;
+    // ec3047da8 attempts the physical delete before clearing the active
+    // selection. This application's restrictive FK vetoes that delete.
+    let (status, _) = post(
+        &auth,
+        "/organization/delete",
+        json!({"organizationId":native_id}),
+        &cookie,
+    )
+    .await?;
+    assert_eq!(status, 500);
+    assert!(store.get_organization_by_id(native_id).await?.is_some());
+    assert_eq!(store.count_organization_members(native_id).await?, 2);
+    assert_eq!(
+        store.get_session(owner_session.token()).await?.unwrap().active_organization_id(),
+        Some(native_id)
+    );
+    _ = store
+        .update_session_active_organization(owner_session.token(), None)
+        .await?;
     let (status, deleted) = post(
         &auth,
         "/organization/delete",
@@ -536,7 +555,12 @@ async fn post(
     _ = request.headers.insert("cookie".into(), cookie.into());
     request.body = Some(serde_json::to_vec(&body)?);
     let response = Box::pin(auth.handle_request(request)).await?;
-    Ok((response.status, serde_json::from_slice(&response.body)?))
+    let body = if response.body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&response.body)?
+    };
+    Ok((response.status, body))
 }
 
 fn session_input(user_id: String) -> CreateSession {

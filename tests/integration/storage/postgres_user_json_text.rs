@@ -34,7 +34,7 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
     let db = Db::postgres().await?;
     let fixture: Value =
         serde_json::from_str(include_str!("../../fixtures/postgres-user-json-text.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     _ = db
         .execute(fixture["table_sql"].as_str().unwrap(), &[])
         .await?;

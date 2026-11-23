@@ -7,7 +7,7 @@ import { registerClientMetadataDocument } from "../reference-server/node_modules
 import { config } from "../reference-server/probes/schema-parity.mjs";
 import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/oauth-provider/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/oauth-provider/package.json", import.meta.url))).version, "1.7.27");
 const database = await createMysqlDatabase();
 const cases = [];
 try {
@@ -48,7 +48,7 @@ try {
     cases.push({ action, output, error, stored });
   }
   assert.equal(cases.length, 5);
-  await writeFile(new URL("../../fixtures/mysql-oauth-document-replacement.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-oauth-document-replacement.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
   console.log(`${cases.length} actual MySQL client-document registration, replacement and rollback cases`);
 } finally {
   await database.close();

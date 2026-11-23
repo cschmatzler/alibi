@@ -131,7 +131,8 @@ async fn device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_c
         let denied = call(&auth, request("/device/token", Some(json!({"client_id":"native-client","device_code":"configured-device-proof","grant_type":"urn:ietf:params:oauth:grant-type:device_code"})), ""), status).await;
         assert_eq!(*callbacks.events.lock().unwrap(), ["validate"]);
         if phase == "false" {
-            assert_eq!(body(&denied)["error"], "invalid_grant");
+            // 5eb69d837 changes the rejection of validateClient on /device/token.
+            assert_eq!(body(&denied)["error"], "invalid_client");
         }
         assert_eq!(db.table("deviceCode").await?, pending);
         assert_eq!(db.count("session").await?, 0);

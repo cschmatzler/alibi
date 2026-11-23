@@ -173,7 +173,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, mode: ResultMode) -> Test
         ResultMode::Omitted => include_str!("../../fixtures/account-timestamp-hooks-omit.json"),
         ResultMode::String => include_str!("../../fixtures/account-timestamp-hooks-string.json"),
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let backend = if db.is_postgres() {
         "postgres"
     } else {

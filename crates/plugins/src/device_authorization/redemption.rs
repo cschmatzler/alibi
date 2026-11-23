@@ -19,7 +19,7 @@ impl DeviceAuthorizationPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if !self.validate_client_id(&body.client_id).await? {
-            return device_error_response(400, "invalid_grant", INVALID_CLIENT_ID);
+            return device_error_response(400, "invalid_client", INVALID_CLIENT_ID);
         }
 
         let Some(device_code) = ctx

@@ -1,3 +1,4 @@
+use alibi_core::utils::redirect_uri::{INSECURE_REDIRECT_URI, loopback_host, syntax_issue};
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
@@ -146,7 +147,7 @@ impl OAuthProviderPlugin {
         }
         let metadata: serde_json::Map<String, Value> =
             serde_json::from_value(serde_json::to_value(input)?)?;
-        let metadata = match self.admit_metadata(metadata, &self.config.scopes, ctx)? {
+        let metadata = match Box::pin(self.admit_metadata(metadata, &self.config.scopes, ctx)).await? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
@@ -172,44 +173,70 @@ fn protocol_error(error: &str, description: impl Into<String>) -> AuthResult<End
         &serde_json::to_string(&json!({"error":error,"error_description":description.into()}))?,
     )?))
 }
-fn redirect_error(uri: &str, application: &str) -> Option<String> {
-    let Ok(url) = url::Url::parse(uri) else {
-        return Some(format!("redirect URI must be an absolute URI: {uri}"));
-    };
-    if uri.contains('#')
-        || !url.username().is_empty()
-        || url.password().is_some_and(|value| !value.is_empty())
-    {
-        return Some(format!(
-            "redirect URI must not include credentials or a fragment: {uri}"
-        ));
+impl OAuthProviderPlugin {
+    fn redirect_error(&self, uri: &str, application: &str) -> Option<String> {
+        let Ok(url) = url::Url::parse(uri) else {
+            return Some(format!("redirect URI must be an absolute URI: {uri}"));
+        };
+        if uri.contains('#')
+            || !url.username().is_empty()
+            || url.password().is_some_and(|value| !value.is_empty())
+        {
+            return Some(format!(
+                "redirect URI must not include credentials or a fragment: {uri}"
+            ));
+        }
+        let host = url.host_str().unwrap_or_default();
+        if host.trim_end_matches('.') == "localhost" && host.ends_with('.') {
+            return Some(format!(
+                "redirect URI localhost must not include trailing dots: {uri}"
+            ));
+        }
+        let loopback = host == "localhost"
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+            || host == "[::1]";
+        if application == "web" {
+            if url.scheme() == "http" && self.insecure_redirect_uri_allowed(&url) {
+                return None;
+            }
+            return (url.scheme() != "https" || loopback).then(|| {
+                format!("web clients require https redirect URIs on non-loopback hosts: {uri}")
+            });
+        }
+        if url.scheme() == "https" {
+            return loopback
+                .then(|| format!("native clients must not use https loopback redirect URIs: {uri}"));
+        }
+        if url.scheme() == "http" {
+            let exact_loopback = raw_http_host(uri)
+                .as_deref()
+                .is_some_and(|host| ["localhost", "127.0.0.1", "[::1]"].contains(&host));
+            if exact_loopback || (!loopback_host(&url) && self.insecure_redirect_uri_allowed(&url)) {
+                return None;
+            }
+            return Some(format!("native clients may use http only on the exact loopback hosts localhost, 127.0.0.1, or [::1]: {uri}"));
+        }
+        (!native_private_use(&url, uri)).then(|| format!("native private-use redirect URI schemes must not use a reserved scheme; they must be an authority-free reverse-domain URI or a custom-scheme URI with a host and a path: {uri}"))
     }
-    let host = url.host_str().unwrap_or_default();
-    if host.trim_end_matches('.') == "localhost" && host.ends_with('.') {
-        return Some(format!(
-            "redirect URI localhost must not include trailing dots: {uri}"
-        ));
+    fn insecure_redirect_uri_allowed(&self, uri: &url::Url) -> bool {
+        uri.username().is_empty()
+            && uri.password().is_none_or(str::is_empty)
+            && self.config.allow_insecure_redirect_uri.as_ref().is_some_and(|policy| {
+                policy.allows(uri).unwrap_or(false)
+            })
     }
-    let loopback = host == "localhost"
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
-        || host == "[::1]";
-    if application == "web" {
-        return (url.scheme() != "https" || loopback).then(|| {
-            format!("web clients require https redirect URIs on non-loopback hosts: {uri}")
-        });
+
+    pub(super) fn redirect_uri_transport_allowed(&self, uri: &str, web: bool) -> bool {
+        url::Url::parse(uri).is_ok_and(|url| {
+            url.scheme() != "http"
+                || (!web && loopback_host(&url))
+                || self.insecure_redirect_uri_allowed(&url)
+        })
     }
-    if url.scheme() == "https" {
-        return loopback
-            .then(|| format!("native clients must not use https loopback redirect URIs: {uri}"));
-    }
-    if url.scheme() == "http" {
-        let raw_host = raw_http_host(uri);
-        return (!raw_host.as_deref().is_some_and(|host|["localhost","127.0.0.1","[::1]"].contains(&host))).then(||format!("native clients may use http only on the exact loopback hosts localhost, 127.0.0.1, or [::1]: {uri}"));
-    }
-    (!native_private_use(&url, uri)).then(|| format!("native private-use redirect URI schemes must not use a reserved scheme; they must be an authority-free reverse-domain URI or a custom-scheme URI with a host and a path: {uri}"))
 }
+
 /// RFC 8252 §7.1's authority-free reverse-domain form, or a host-bearing
 /// custom scheme with a path such as `cursor://anysphere.cursor-mcp/oauth/callback`.
 pub(super) fn native_private_use(url: &url::Url, uri: &str) -> bool {
@@ -306,25 +333,23 @@ fn private_host(host: &str) -> bool {
     !crate::sso::endpoint_host::public(host)
 }
 
-fn remote_key_uri_error<S: AuthSchema>(uri: &str, ctx: &AuthContext<S>) -> Option<String> {
+pub(super) fn remote_key_uri_error(uri: &str) -> Option<&'static str> {
     let Ok(url) = url::Url::parse(uri) else {
-        return Some("jwks_uri must be a valid URL".into());
+        return Some("jwks_uri must be a valid URL");
     };
     if url.scheme() != "https" {
-        return Some("jwks_uri must use HTTPS".into());
+        return Some("jwks_uri must use HTTPS");
     }
     if !url.username().is_empty() || url.password().is_some_and(|value| !value.is_empty()) {
-        return Some("jwks_uri must not contain credentials".into());
+        return Some("jwks_uri must not contain credentials");
     }
     if uri.contains('#') {
-        return Some("jwks_uri must not include a fragment component".into());
+        return Some("jwks_uri must not include a fragment component");
     }
     if private_host(url.host_str().unwrap_or_default()) {
-        return Some("jwks_uri must not point to a private or reserved address".into());
+        return Some("jwks_uri must not point to a private or reserved address");
     }
-    (!ctx.config.is_redirect_target_trusted(uri)).then(|| {
-        "jwks_uri must belong to a trusted origin or the Client ID Metadata Document origin".into()
-    })
+    None
 }
 fn backchannel_uri_error(uri: &str) -> Option<String> {
     let Ok(url) = url::Url::parse(uri) else {
@@ -572,7 +597,7 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                         ));
                     }
                     if matches!(kind, FieldKind::Uris) {
-                        for issue in safe_uri_issues(text) {
+                        if let Some(issue) = syntax_issue(text) {
                             issues.push(format!("[{item_path}] {issue}"));
                         }
                     }
@@ -634,32 +659,10 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
         }
     }
 }
-pub(super) fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
-    let Ok(url) = url::Url::parse(uri) else {
-        return vec!["Invalid URL"];
-    };
-    if ["javascript", "data", "vbscript"].contains(&url.scheme()) {
-        return vec!["URL cannot use javascript:, data:, or vbscript: scheme"];
-    }
-    let mut issues = Vec::new();
-    if uri.contains('#') {
-        issues.push("Redirect URI must not contain a fragment component");
-    }
-    let host = url
-        .host_str()
-        .unwrap_or_default()
-        .trim_matches(['[', ']'])
-        .trim_end_matches('.');
-    let loopback = host == "localhost"
-        || host.ends_with(".localhost")
-        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| match ip {
-            std::net::IpAddr::V4(ip) => ip.is_loopback(),
-            std::net::IpAddr::V6(ip) => {
-                ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
-            }
-        });
-    if url.scheme() == "http" && !loopback {
-        issues.push("Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)");
+fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
+    let mut issues = syntax_issue(uri).into_iter().collect::<Vec<_>>();
+    if url::Url::parse(uri).is_ok_and(|url| url.scheme() == "http" && !loopback_host(&url)) {
+        issues.push(INSECURE_REDIRECT_URI);
     }
     issues
 }
@@ -939,6 +942,23 @@ impl OAuthProviderPlugin {
         EndpointResponse::json(&output)
     }
 }
+/// Attach an authentication challenge. `WWW-Authenticate` is not a
+/// CORS-safelisted response header, so it is exposed for cross-origin clients.
+pub(super) fn with_challenge(response: EndpointResponse, challenge: &str) -> EndpointResponse {
+    response
+        .with_header("WWW-Authenticate", challenge)
+        .with_header("Access-Control-Expose-Headers", "WWW-Authenticate")
+}
+pub(super) fn with_basic_challenge(response: EndpointResponse) -> EndpointResponse {
+    with_challenge(response, "Basic")
+}
+/// Challenge headers for an `EndpointError`, matching [`with_challenge`].
+pub(super) fn challenge_headers(challenge: &str) -> alibi_core::Headers {
+    let mut headers = alibi_core::Headers::new();
+    _ = headers.insert("WWW-Authenticate", challenge);
+    _ = headers.insert("Access-Control-Expose-Headers", "WWW-Authenticate");
+    headers
+}
 pub(super) fn status_protocol_error(
     status: u16,
     error: &str,
@@ -955,21 +975,23 @@ pub(super) fn status_protocol_error(
 }
 
 impl OAuthProviderPlugin {
-    fn admit_metadata<S: AuthSchema>(
+    async fn admit_metadata<S: AuthSchema>(
         &self,
         metadata: serde_json::Map<String, Value>,
         allowed_scopes: &[String],
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
-        self.admit_metadata_for_source(metadata, allowed_scopes, ctx, false)
+        self.admit_metadata_for_source(metadata, allowed_scopes, ctx, None, None).await
     }
-    pub(super) fn admit_metadata_for_source<S: AuthSchema>(
+    pub(super) async fn admit_metadata_for_source<S: AuthSchema>(
         &self,
         mut metadata: serde_json::Map<String, Value>,
         allowed_scopes: &[String],
         ctx: &AuthContext<S>,
-        document: bool,
+        source: Option<(&str, &str)>,
+        request: Option<&alibi_core::AuthRequest>,
     ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
+        let document = source.is_some();
         let auth = metadata
             .get("token_endpoint_auth_method")
             .and_then(Value::as_str)
@@ -1059,9 +1081,29 @@ impl OAuthProviderPlugin {
             .map(Err);
         }
         for redirect in &redirects {
-            if let Some(error) = redirect_error(redirect.as_str().unwrap_or_default(), application)
+            if let Some(error) = self.redirect_error(redirect.as_str().unwrap_or_default(), application)
             {
                 return protocol_error("invalid_redirect_uri", error).map(Err);
+            }
+        }
+        for uri in metadata
+            .get("post_logout_redirect_uris")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            if !url::Url::parse(uri).is_ok_and(|url| {
+                url.username().is_empty() && url.password().is_none_or(str::is_empty)
+            }) {
+                return protocol_error(
+                    "invalid_redirect_uri",
+                    format!("post-logout redirect URI must be an absolute URI without credentials: {uri}"),
+                ).map(Err);
+            }
+            if !self.redirect_uri_transport_allowed(uri, false) {
+                return protocol_error("invalid_redirect_uri", format!("{INSECURE_REDIRECT_URI}: {uri}"))
+                    .map(Err);
             }
         }
         let responses = metadata
@@ -1158,61 +1200,53 @@ impl OAuthProviderPlugin {
                 }
             }
         }
-        if metadata.contains_key("jwks") && metadata.contains_key("jwks_uri") {
-            return protocol_error(
-                "invalid_client_metadata",
-                "jwks and jwks_uri are mutually exclusive",
-            )
-            .map(Err);
+        let jwks = metadata.get("jwks").filter(|value| !value.is_null());
+        let uri = metadata.get("jwks_uri").and_then(Value::as_str);
+        if jwks.is_some() && uri.is_some() {
+            return protocol_error("invalid_client_metadata", "jwks and jwks_uri are mutually exclusive")
+                .map(Err);
         }
         if document && metadata.get("require_pkce") == Some(&json!(false)) {
-            return protocol_error(
-                "invalid_client_metadata",
-                "pkce is required for registered clients.",
-            )
-            .map(Err);
+            return protocol_error("invalid_client_metadata", "pkce is required for registered clients.")
+                .map(Err);
         }
-        if let Some(uri) = metadata.get("jwks_uri").and_then(Value::as_str)
-            && let Some(error) = remote_key_uri_error(uri, ctx).filter(|error| {
-                !(document
-                    && error.starts_with("jwks_uri must belong")
-                    && metadata
-                        .get("client_id")
-                        .and_then(Value::as_str)
-                        .and_then(|id| url::Url::parse(id).ok())
-                        .zip(url::Url::parse(uri).ok())
-                        .is_some_and(|(id, key)| id.origin() == key.origin()))
-            })
-        {
-            return protocol_error("invalid_client_metadata", error).map(Err);
+        if let Some(uri) = uri {
+            if let Some(error) = remote_key_uri_error(uri) {
+                return protocol_error("invalid_client_metadata", error).map(Err);
+            }
+            if !ctx.config.is_redirect_target_trusted(uri) {
+                let allowed = match source {
+                    Some((owner, client_id)) => self
+                        .allows_discovered_jwks_origin(ctx, request, owner, client_id, uri)
+                        .await,
+                    None => false,
+                };
+                if !allowed {
+                    return protocol_error(
+                        "invalid_client_metadata",
+                        "jwks_uri must belong to a trusted origin or the Client ID Metadata Document origin",
+                    ).map(Err);
+                }
+            }
         }
-        if let Some(jwks) = metadata.get("jwks")
-            && document
-            && !jwks
-                .get("keys")
-                .and_then(Value::as_array)
+        if let Some(jwks) = jwks {
+            if document && !jwks.get("keys").and_then(Value::as_array)
                 .is_some_and(|keys| !keys.is_empty() && keys.iter().all(Value::is_object))
-        {
-            return protocol_error(
-                "invalid_client_metadata",
-                "jwks must be an RFC 7517 JWK Set object with a non-empty keys array",
-            )
-            .map(Err);
+            {
+                return protocol_error(
+                    "invalid_client_metadata",
+                    "jwks must be an RFC 7517 JWK Set object with a non-empty keys array",
+                ).map(Err);
+            }
+            if let Some(error) = public_jwks_error(jwks) {
+                return protocol_error("invalid_client_metadata", error).map(Err);
+            }
         }
-        if let Some(jwks) = metadata.get("jwks")
-            && let Some(error) = public_jwks_error(jwks)
-        {
-            return protocol_error("invalid_client_metadata", error).map(Err);
-        }
-        if auth == "private_key_jwt"
-            && !metadata.contains_key("jwks")
-            && !metadata.contains_key("jwks_uri")
-        {
+        if auth == "private_key_jwt" && jwks.is_none() && uri.is_none() {
             return protocol_error(
                 "invalid_client_metadata",
                 "private_key_jwt requires either jwks or jwks_uri",
-            )
-            .map(Err);
+            ).map(Err);
         }
         if let Some(uri) = metadata
             .get("backchannel_logout_uri")
@@ -1340,11 +1374,12 @@ impl OAuthProviderPlugin {
             return status_protocol_error(404, "not_found", "client not found");
         };
         let mut updates: serde_json::Map<String, Value> = serde_json::from_value(input.update)?;
-        // Only the global operator policy can authorize the pinned administrative
-        // scopes-only exception. It never grants cross-owner metadata authority.
+        let discovery_id = client.metadata.get("client_discovery_id").and_then(Value::as_str)
+            .filter(|id| !id.is_empty()).map(str::to_owned);
+        // The administrative scopes-only operation has its own privilege check.
         let cross_owner_scopes = client.user_id.as_deref() != Some(user.id().as_ref())
             && admin
-            && self.config.client_privileges.is_some()
+            && (discovery_id.is_some() || self.config.client_privileges.is_some())
             && updates.len() == 1
             && updates.contains_key("client_credentials_scopes");
         if client.user_id.as_deref() != Some(user.id().as_ref()) && !cross_owner_scopes {
@@ -1414,15 +1449,23 @@ impl OAuthProviderPlugin {
             _ = merged.insert("client_credentials_scopes".into(), json!([]));
         }
         // Update admission may infer defaults, but the reference persists only the requested patch.
-        let metadata = match self.admit_metadata(merged.clone(), &self.config.scopes, ctx)? {
+        let source = discovery_id.as_deref().map(|id| (id, input.client_id.as_str()));
+        let metadata = match Box::pin(self.admit_metadata_for_source(
+            merged.clone(), &self.config.scopes, ctx, source, req.physical_request(),
+        )).await? {
             Ok(_) => Value::Object(merged),
             Err(response) => return Ok(response),
         };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid client update timestamp"))?;
+        let updated_at = if discovery_id.is_some() {
+            client.updated_at.unwrap_or(now)
+        } else {
+            now
+        };
         let Some(client) = ctx
             .database
-            .update_oauth_client_metadata(&input.client_id, metadata, now)
+            .update_oauth_client_metadata(&input.client_id, metadata, updated_at)
             .await?
         else {
             return status_protocol_error(500, "invalid_client", "unable to update client");
@@ -1622,9 +1665,7 @@ impl OAuthProviderPlugin {
                         "invalid_request",
                         "Malformed initial access token Authorization header",
                     )
-                    .map(|response| {
-                        response.with_header("WWW-Authenticate", "Bearer error=\"invalid_request\"")
-                    });
+                    .map(|response| with_challenge(response, "Bearer error=\"invalid_request\""));
                 }
                 let mut client_metadata = metadata.clone();
                 if let Some(resources) = body.and_then(|body| body.get("resources")) {
@@ -1664,7 +1705,8 @@ impl OAuthProviderPlugin {
             .with_error_body(alibi_core::utils::json::parse_value(
                 r#"{"error_description":"Authentication required for client registration"}"#,
             )?)
-            .with_header("WWW-Authenticate", "Bearer"));
+            .with_header("WWW-Authenticate", "Bearer")
+            .with_header("Access-Control-Expose-Headers", "WWW-Authenticate"));
         }
         // RFC 7591 §3.2.1 lets the server replace requested metadata: register
         // the supported grants and return them instead of rejecting the request.
@@ -1759,7 +1801,7 @@ impl OAuthProviderPlugin {
                 _ = metadata.insert("application_type".into(), json!(application));
             }
         }
-        let mut metadata = match self.admit_metadata(metadata, &registration_scopes, ctx)? {
+        let mut metadata = match Box::pin(self.admit_metadata(metadata, &registration_scopes, ctx)).await? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
@@ -1975,7 +2017,7 @@ impl OAuthProviderPlugin {
             .remove("metadata")
             .and_then(|value| value.as_object().cloned())
             .unwrap_or_default();
-        let mut metadata = match self.admit_metadata(metadata, &self.config.scopes, ctx)? {
+        let mut metadata = match Box::pin(self.admit_metadata(metadata, &self.config.scopes, ctx)).await? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
@@ -2284,6 +2326,18 @@ impl OAuthProviderPlugin {
                 r#"{"error":"invalid_signature"}"#,
             )?));
         }
+        let query_client = url::form_urlencoded::parse(
+            input.oauth_query.as_deref().unwrap_or_default().as_bytes(),
+        )
+        .find(|(name, _)| name == "client_id")
+        .map(|(_, value)| value);
+        if query_client.as_deref() != Some(input.client_id.as_str()) {
+            return status_protocol_error(
+                401,
+                "invalid_client",
+                "client_id does not match the signed oauth_query",
+            );
+        }
         Box::pin(self.public_client_projection(&input.client_id, ctx)).await
     }
 }
@@ -2423,6 +2477,7 @@ impl OAuthProviderPlugin {
             &audience,
             true,
             Some(rotatable),
+            req.physical_request(),
         ))
         .await?
         {

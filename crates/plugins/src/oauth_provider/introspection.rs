@@ -4,7 +4,7 @@ use alibi_core::endpoint::{EndpointResponse, ServerEndpoint, is_endpoint_api_err
 use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 impl OAuthProviderPlugin {
     /// Inspect an access or refresh token using the introspecting client's credentials.
@@ -34,7 +34,8 @@ impl OAuthProviderPlugin {
         if credentials.client_id.is_empty()
             || (credentials.secret.is_empty() && !credentials.pre_verified)
         {
-            return error(401, "invalid_client", "missing required credentials");
+            return error(401, "invalid_client", "missing required credentials")
+                .map(super::clients::with_basic_challenge);
         }
         let raw = body
             .get("token")
@@ -58,10 +59,13 @@ impl OAuthProviderPlugin {
             let refresh = matches!(kind, OAuthTokenKind::Refresh);
             if !refresh {
                 match self
-                    .validate_access_token(ctx, token, Some(&credentials.client_id))
+                    .resolve_access_token_validation(
+                        ctx, token, Some(&credentials.client_id), req.physical_request(),
+                    )
                     .await
                 {
-                    Ok(payload) => {
+                    Ok(validation) => {
+                        let payload = validation.payload;
                         let payload = self
                             .resolve_introspection_subject(ctx, payload, &introspecting_client)
                             .await?;
@@ -96,8 +100,9 @@ impl OAuthProviderPlugin {
                     }
                 }
             }
-            let decoded = match self.decode_refresh_token(token).await {
+            let decoded = match self.decode_refresh_token_for_lookup(token).await {
                 Ok(Some(decoded)) => decoded,
+                Ok(None) if hint == "refresh_token" => return inactive(),
                 Ok(None) => continue,
                 Err(error) if is_endpoint_api_error(&error) => {
                     if hint != "refresh_token" {
@@ -149,25 +154,22 @@ impl OAuthProviderPlugin {
             if row.client_id != credentials.client_id {
                 return inactive();
             }
+            let session_id = super::refresh::active_session_id(ctx, &row).await?;
+            let row_scopes = row
+                .metadata
+                .get("scopes")
+                .and_then(Value::as_array)
+                .map(|scopes| scopes.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+                .unwrap_or_default();
+            if session_id.is_none() && super::refresh::is_session_bound(&row, &row_scopes) {
+                return inactive();
+            }
             let user = if let Some(id) = row.user_id.as_deref() {
                 ctx.database.get_user_by_id(id).await?
             } else {
                 None
             };
             let user_view = user.as_ref().map(|user| ctx.user_view(user)).transpose()?;
-            let mut session_id = row.session_id.clone();
-            if let Some(id) = session_id.as_deref() {
-                let sessions = if let Some(user) = row.user_id.as_deref() {
-                    ctx.database.get_user_sessions(user).await?
-                } else {
-                    Vec::new()
-                };
-                if !sessions.iter().any(|session| {
-                    session.id().as_ref() == id && session.expires_at() >= chrono::Utc::now()
-                }) {
-                    session_id = None;
-                }
-            }
             let base = format!(
                 "{}{}",
                 ctx.config.base_url.trim_end_matches('/'),

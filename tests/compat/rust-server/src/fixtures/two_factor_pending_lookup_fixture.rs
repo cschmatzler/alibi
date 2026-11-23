@@ -48,11 +48,11 @@ impl SendTwoFactorOtp for Delivery {
 fn phase(sql: &str) -> Option<&'static str> {
     let query = sql.to_lowercase();
     if query.starts_with("select") && query.contains("from \"verification\"") {
-        if query.contains("\"identifier\" =") {
-            return Some("lookup");
-        }
         if query.contains("\"expiresat\" <") {
             return Some("cleanup-read");
+        }
+        if query.contains("\"identifier\" =") {
+            return Some("lookup");
         }
     }
     if query.starts_with("delete")
@@ -112,6 +112,7 @@ pub(crate) async fn router(
         database.clone(),
     ));
     let mut router = Router::new();
+    let mut profiles = HashMap::new();
     for name in [
         "two-factor-pending-lookup",
         "two-factor-pending-lookup-disabled",
@@ -153,6 +154,7 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
+        _ = profiles.insert(name, auth.clone());
         router = router.nest(
             &path,
             observed.scope(auth.clone().axum_router().with_state(auth)),
@@ -165,6 +167,7 @@ pub(crate) async fn router(
             let delivery = delivery.clone();
             let store = store.clone();
             let database = database.clone();
+            let profile = profiles.get(body["profile"].as_str().unwrap_or_default()).cloned();
             async move {
                 trace
                     .lock()
@@ -187,6 +190,12 @@ pub(crate) async fn router(
                         trace.receipts.clear();
                         trace.armed = true;
                         return Ok::<_, AuthError>(Json(json!({"armed":true})));
+                    }
+                    "prime-cleanup" => {
+                        let auth = profile
+                            .ok_or_else(|| AuthError::bad_request("unknown profile"))?;
+                        _ = auth.context().verifications().find("pending-cleanup-probe").await?;
+                        return Ok(Json(json!({"primed":true})));
                     }
                     "delivery" => {
                         return Ok(Json(

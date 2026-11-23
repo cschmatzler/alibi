@@ -281,17 +281,15 @@ async fn email_otp_verification_override_owns_signup_transaction_and_direct_deli
                 "",
             )
         };
-        if !explicit_sender {
-            sender.fail.store(true, Ordering::SeqCst);
-            let _ = call(&auth, signup_request(), 500).await;
-            assert_eq!(sender.otp.lock().unwrap().len(), 1);
-            for table in ["user", "account", "session", "verification"] {
-                assert_eq!(db.count(table).await?, 0);
-            }
-            sender.otp.lock().unwrap().clear();
-            sender.fail.store(false, Ordering::SeqCst);
-        }
+        // The code is stored and sent after the signup commits, so a failed
+        // delivery is logged and keeps the user and its stored code.
+        sender.fail.store(!explicit_sender, Ordering::SeqCst);
         let created = call(&auth, signup_request(), 200).await;
+        sender.fail.store(false, Ordering::SeqCst);
+        assert_eq!(
+            db.count("verification").await?,
+            i64::from(!explicit_sender)
+        );
         assert!(body(&created)["token"].is_null());
         assert!(cookies(&created).is_empty());
         assert_eq!(db.count("user").await?, 1);

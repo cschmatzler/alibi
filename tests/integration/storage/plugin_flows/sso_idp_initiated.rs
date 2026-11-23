@@ -6,6 +6,7 @@ use alibi::{
     AuthVerification,
     store::{AccountStore, VerificationStore},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 backend_tests!(
     sso_idp_initiated_saml_requires_opt_in_and_trusted_nonreplayed_assertions,
     sso_global_saml_callback_obeys_provider_precedence_and_trusted_fallbacks
@@ -76,8 +77,8 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                 &email,
                 wrong_key,
             )?;
-            let payload = json!({"SAMLResponse":grant["SAMLResponse"]});
-            let invoke = || async {
+            let encoded = grant["SAMLResponse"].as_str().unwrap();
+            let invoke = async |encoded: &str| {
                 if http {
                     let mut request = AuthRequest::new(
                         HttpMethod::Post,
@@ -92,7 +93,7 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                         .insert("origin".into(), "https://idp.example.test".into());
                     request.body = Some(
                         url::form_urlencoded::Serializer::new(String::new())
-                            .append_pair("SAMLResponse", grant["SAMLResponse"].as_str().unwrap())
+                            .append_pair("SAMLResponse", encoded)
                             .finish()
                             .into_bytes(),
                     );
@@ -101,14 +102,14 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                         .map_err(Box::<dyn std::error::Error + Send + Sync>::from)
                 } else {
                     Ok(Box::pin(auth.dispatch_endpoint(
-                        SsoPlugin::acs_endpoint(&provider_id, &payload)?,
+                        SsoPlugin::acs_endpoint(&provider_id, &json!({"SAMLResponse":encoded}))?,
                         EndpointOptions::default(),
                     ))
                     .await?
                     .into_response()?)
                 }
             };
-            let completed = invoke().await?;
+            let completed = invoke(encoded).await?;
             assert_eq!(completed.status, 302);
             let location =
                 url::Url::parse(ORIGIN)?.join(completed.headers.get("location").unwrap())?;
@@ -164,17 +165,28 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                 )
                 .await;
                 assert_eq!(body(&session)["user"]["email"], email);
-                let replay = invoke().await?;
-                let replay =
-                    url::Url::parse(ORIGIN)?.join(replay.headers.get("location").unwrap())?;
-                assert_eq!(
-                    replay
-                        .query_pairs()
-                        .find(|(key, _)| key == "error")
-                        .unwrap()
-                        .1,
-                    "replay_detected"
+                let assertion_id = grant["assertionId"].as_str().unwrap();
+                let xml = String::from_utf8(STANDARD.decode(encoded)?)?;
+                let attribute = format!(r#"ID="{assertion_id}""#);
+                assert!(xml.contains(&attribute));
+                let equivalent = xml.replacen(
+                    &attribute,
+                    &format!(r#"ID="&#95;{}""#, assertion_id.strip_prefix('_').unwrap()),
+                    1,
                 );
+                for replay_input in [encoded, &STANDARD.encode(equivalent)] {
+                    let replay = invoke(replay_input).await?;
+                    let replay =
+                        url::Url::parse(ORIGIN)?.join(replay.headers.get("location").unwrap())?;
+                    assert_eq!(
+                        replay
+                            .query_pairs()
+                            .find(|(key, _)| key == "error")
+                            .unwrap()
+                            .1,
+                        "replay_detected"
+                    );
+                }
             }
             assert!(
                 store

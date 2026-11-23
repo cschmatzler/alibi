@@ -148,10 +148,6 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
                     200,
                 )
                 .await;
-                assert!(
-                    response.headers.get("set-cookie").is_none(),
-                    "nested token path drops callback cookie headers"
-                );
                 response
             } else {
                 let delivered = url::Url::parse(&url)?;
@@ -172,9 +168,9 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
                 response
             }
         };
-        if mode != "nested-token" {
-            assert!(response.headers.get_all("set-cookie").any(|cookie|cookie.contains("session_token=") && cookie.contains("Max-Age=0")));
-        }
+        assert!(response.headers.get_all("set-cookie").any(|cookie| {
+            cookie.starts_with("better-auth.session_token=;") && cookie.contains("Max-Age=0")
+        }));
         for (table, column) in [
             ("user", "id"),
             ("account", "userId"),
@@ -320,7 +316,9 @@ async fn deletion_password_rejection_preserves_delivered_body_proof<B: Backend>(
         200,
     )
     .await;
-    assert!(!deleted.headers.contains_key("set-cookie"));
+    assert!(deleted.headers.get_all("set-cookie").any(|cookie| {
+        cookie.starts_with("better-auth.session_token=;") && cookie.contains("Max-Age=0")
+    }));
     assert_eq!(hooks.before.load(Ordering::SeqCst), 1);
     assert_eq!(hooks.after.load(Ordering::SeqCst), 1);
     assert_eq!(db.count("verification").await?, 0);

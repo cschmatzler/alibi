@@ -65,8 +65,6 @@ impl<S: AuthSchema> SqlxStore<S> {
         sql.compare("scimGroupMember", "connectionId", " = ", connection);
         sql.push(" AND ");
         sql.compare("scimGroupMember", "scimUserId", " = ", id);
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
         exec.fetch_all::<member::Model>(sql).await
     }
     pub(super) async fn delete_scim_user_with_exec(

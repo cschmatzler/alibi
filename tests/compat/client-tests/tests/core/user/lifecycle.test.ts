@@ -1631,7 +1631,11 @@ for (const mode of ["wrong-password", "maximum", "after-delete"]) {
         expect(completed.error).toBeNull();
       }
 
-      expect(cookies).toEqual([]);
+      expect(cookies).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/^better-auth[.]session_token=;.*Max-Age=0/),
+        ]),
+      );
 
       const after = await control(ctx, name);
       expect(foreignRows(after, signup.data.user.id)).toEqual({

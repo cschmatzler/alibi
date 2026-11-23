@@ -91,6 +91,25 @@ async fn oauth_trusted_refresh_issuance_uses_row_identity_and_caller_authorizati
             .is_none_or(Value::is_null)
     );
     params.user = Some(auth.context().trusted_user_view(&user).unwrap());
+    // Better Auth #12812 requires a session to narrow an offline grant.
+    let before = db
+        .tables(&["oauthAccessToken", "oauthRefreshToken"])
+        .await?;
+    let no_session = provider
+        .issue_tokens(auth.context(), &call, Some("urn:fixture:server"), &params)
+        .await
+        .unwrap_err();
+    assert_eq!(no_session.error.status_code(), 400);
+    assert_eq!(
+        no_session.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_grant","error_description":"invalid refresh token"})
+    );
+    assert_eq!(
+        db.tables(&["oauthAccessToken", "oauthRefreshToken"])
+            .await?,
+        before
+    );
+    params.session_id = seed_params.session_id.clone();
     params.reference_id = Some("next-ref".into());
     params.refresh_token.as_mut().unwrap().token = "snapshot-not-a-lookup-key".into();
     let issued = provider
@@ -114,7 +133,8 @@ async fn oauth_trusted_refresh_issuance_uses_row_identity_and_caller_authorizati
         json!(["email"])
     );
     assert_eq!(retained.metadata["referenceId"], "next-ref");
-    assert!(retained.session_id.is_none());
+    // A rotated token stays bound to its parent's session.
+    assert_eq!(retained.session_id, original.session_id);
     assert!(retained.metadata.get("authTime").is_none_or(Value::is_null));
     let old = auth
         .store()
@@ -140,6 +160,7 @@ async fn oauth_trusted_refresh_issuance_uses_row_identity_and_caller_authorizati
             .await?,
         before
     );
+    params.session_id = None;
     params.refresh_token = Some(retained);
     let access_only = provider
         .issue_tokens(auth.context(), &call, Some("urn:fixture:server"), &params)

@@ -27,6 +27,7 @@ pub(super) use http::handle_link_social;
 pub(crate) use http::handle_social_sign_in;
 pub(super) use http::{callback_core, callback_post_response, handle_callback};
 pub(crate) use identity::process_oauth_sign_in;
+pub(crate) use identity::process_oauth_sign_in_with_account_fields;
 pub(crate) use identity::process_oauth_sign_in_with_output;
 pub(crate) use linking::complete_link_social;
 pub(super) use linking::{link_with_id_token_core, sign_in_with_id_token_core};
@@ -336,6 +337,92 @@ pub(super) fn provider_account(
         scope: (tokens.raw.is_some() || !tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
         password: None,
     }
+}
+
+/// Account columns Alibi owns. A provider's `getAccountFields` can never write
+/// them, so the hook cannot rebind an account or replace its tokens.
+const RESERVED_ACCOUNT_FIELDS: [&str; 13] = [
+    "id",
+    "userId",
+    "providerId",
+    "accountId",
+    "accessToken",
+    "refreshToken",
+    "idToken",
+    "accessTokenExpiresAt",
+    "refreshTokenExpiresAt",
+    "scope",
+    "password",
+    "createdAt",
+    "updatedAt",
+];
+
+/// Runs the provider's `getAccountFields` hook and returns the values that may
+/// be stored on the provider account, or `None` when there is nothing to store.
+/// The values follow the rule for mapped user fields: a read-only field stays
+/// server-owned and the rest pass through the field's validator. The store
+/// applies the field's input transform when it writes the account, so it is
+/// not applied here.
+pub(crate) async fn resolve_oauth_account_fields(
+    provider: &OAuthProvider,
+    tokens: &OAuthTokenSet,
+    user: &OAuthUserInfo,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> AuthResult<Option<alibi_core::field_policy::FieldValues>> {
+    let Some(resolver) = &provider.get_account_fields else {
+        return Ok(None);
+    };
+    let Some(values) = resolver.0.account_fields(tokens, user).await? else {
+        return Ok(None);
+    };
+    let registered = ctx
+        .extensions
+        .get::<alibi_core::field_policy::AdapterFieldPolicies>();
+    let declared = registered.as_ref().map_or(
+        &ctx.config.account.additional_fields,
+        |policies| &*policies.account.0,
+    );
+    let accepted: indexmap::IndexMap<String, alibi_core::utils::json::JsValue> = values
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let name = name.as_str()?.to_owned();
+            (!value.is_undefined()
+                && !RESERVED_ACCOUNT_FIELDS.contains(&name.as_str())
+                && declared.get(&name).is_some_and(|field| {
+                    field.input
+                        && field.field_name.as_deref().is_none_or(|column| {
+                            !RESERVED_ACCOUNT_FIELDS.contains(&column)
+                        })
+                }))
+            .then_some((name, value))
+        })
+        .collect();
+    if accepted.is_empty() {
+        return Ok(None);
+    }
+    let validation = alibi_core::field_policy::SessionFields(
+        declared
+            .iter()
+            .map(|(name, field)| {
+                let mut field = field.clone();
+                field.transform = None;
+                (name.clone(), field)
+            })
+            .collect(),
+    );
+    let parsed = validation
+        .parse_update(&accepted)
+        .map_err(|error| match error {
+            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
+                AuthError::Api {
+                    status: 400,
+                    code: Some(code.into()),
+                    message,
+                }
+            }
+            alibi_core::field_policy::FieldInputError::Transform(error) => error,
+        })?;
+    Ok((!parsed.is_empty()).then_some(parsed))
 }
 
 /// Mapped provider identity together with its original provenance.

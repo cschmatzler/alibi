@@ -90,7 +90,7 @@ async fn mysql_http_workflow_matches_actual_source_schema() -> TestResult {
         .await?;
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/mysql-auth-workflow.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 13);
     let mut jar = BTreeMap::new();

@@ -1,4 +1,4 @@
--- Generated from Better Auth 1.7.18 by mysql-schema-assets.mjs.
+-- Generated from Better Auth 1.7.27 by mysql-schema-assets.mjs.
 
 create table `scimManagedConnection` (`id` varchar(36) not null primary key, `creationRequestId` varchar(255) not null unique, `connectionId` varchar(255) not null unique, `provisioningDomainId` varchar(255) not null, `status` text not null, `revision` integer not null, `createdAt` timestamp(3) not null, `createdBy` text not null, `decommissionStartedAt` timestamp(3), `decommissionStartedBy` text, `decommissionedAt` timestamp(3), `decommissionedBy` text);
 

@@ -24,6 +24,7 @@ pub trait OAuthIdTokenClaimsVerifier: Send + Sync {
 /// HTTP transport for an application-configured provider key authority.
 pub struct HttpOAuthJwksSource {
     url: String,
+    headers: Vec<(String, String)>,
     client: Result<reqwest::Client, String>,
 }
 impl HttpOAuthJwksSource {
@@ -31,21 +32,30 @@ impl HttpOAuthJwksSource {
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
+            headers: Vec::new(),
             client: reqwest::Client::builder()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .map_err(|error| error.to_string()),
         }
     }
+
+    /// Trusted headers sent on each key request. The request refuses
+    /// redirects, so they reach only the configured key URL.
+    #[must_use]
+    pub fn with_headers(mut self, headers: Vec<(String, String)>) -> Self {
+        self.headers = headers;
+        self
+    }
 }
 #[async_trait]
 impl OAuthJwksSource for HttpOAuthJwksSource {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String> {
-        let response = self
-            .client
-            .as_ref()
-            .map_err(Clone::clone)?
-            .get(&self.url)
+        let mut request = self.client.as_ref().map_err(Clone::clone)?.get(&self.url);
+        for (name, value) in &self.headers {
+            request = request.header(name, value);
+        }
+        let response = request
             .send()
             .await
             .map_err(|error| error.to_string())?

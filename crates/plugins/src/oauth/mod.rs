@@ -38,13 +38,15 @@ pub use id_token::{
     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
     OAuthJwksSource, OAuthNonceComparison,
 };
+pub(crate) use providers::email_verified_claim;
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, GenericOAuthConfig, GenericOAuthError,
     GenericOAuthMetadata, GenericOAuthResolved, HuggingFaceOptions, KakaoOptions, KickOptions,
     LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize,
-    NaverOptions, NotionOptions, OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver,
-    OAuthAccountSubject, OAuthAuthorizationCodeCallback, OAuthAuthorizationCodeContext,
+    NaverOptions, NotionOptions, OAuthAccountFields, OAuthAccountFieldsResolver, OAuthAccountKey,
+    OAuthAccountKeyContext, OAuthAccountKeyResolver, OAuthAccountSubject,
+    OAuthAuthorizationCodeCallback, OAuthAuthorizationCodeContext,
     OAuthAuthorizationCodeHandler, OAuthAuthorizationPolicy, OAuthCallbackUserName,
     OAuthCallbackUserPayload, OAuthClientAssertion, OAuthClientAssertionContext,
     OAuthClientAssertionGetter, OAuthConfig, OAuthEndSessionConfig, OAuthIdTokenVerifier,

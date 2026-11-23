@@ -88,7 +88,7 @@ async fn check<B: Backend>(
             include_str!("../../../fixtures/session-updated-at-hooks-no-factory.json")
         }
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(fixture["field"], "updatedAt");
     let backend = if db.is_postgres() {
         "postgres"

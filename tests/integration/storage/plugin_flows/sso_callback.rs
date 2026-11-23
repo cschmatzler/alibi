@@ -11,6 +11,7 @@ use alibi::{
 mod validation_policy;
 backend_tests!(
     sso_callback_redeems_bound_code_and_creates_usable_session,
+    sso_oidc_callback_resumes_a_signed_oauth_provider_authorization,
     sso_shared_callback_selects_provider_from_protected_state,
     sso_callback_verifies_id_token_authority_claims_and_userinfo_subject,
     sso_callback_defaults_omitted_pkce_to_bound_code_exchange,
@@ -31,6 +32,11 @@ async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
 ) -> TestResult {
     callback_flow::<B>(db, CallbackCase::PerProvider).await
+}
+async fn sso_oidc_callback_resumes_a_signed_oauth_provider_authorization<B: Backend>(
+    db: Db,
+) -> TestResult {
+    callback_flow::<B>(db, CallbackCase::ResumeAuthorization).await
 }
 async fn sso_shared_callback_selects_provider_from_protected_state<B: Backend>(
     db: Db,
@@ -56,6 +62,7 @@ async fn sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_
 }
 enum CallbackCase {
     PerProvider,
+    ResumeAuthorization,
     Shared,
     DefaultPkce,
     Discovery,
@@ -75,7 +82,7 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
     let config = AuthConfig::new(SECRET)
         .base_url(ORIGIN)
         .trusted_origin(&idp.base);
-    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+    let builder = AuthBuilder::<B::Schema>::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
         .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(super::auth_probe::fast_password())
@@ -83,9 +90,16 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
         .plugin(SsoPlugin::with_config(SsoConfig {
             redirect_uri: shared.then(|| "/sso/callback".into()),
             ..Default::default()
-        }))
-        .build()
-        .await?;
+        }));
+    let resume = matches!(case, CallbackCase::ResumeAuthorization);
+    let builder = if resume {
+        builder
+            .plugin(alibi::plugins::jwt::JwtPlugin::new())
+            .plugin(alibi::plugins::OAuthProviderPlugin::new())
+    } else {
+        builder
+    };
+    let auth = builder.build().await?;
     let owner = signup(&auth, "sso-callback-owner@example.test").await;
     let mut registration = json!({"providerId":"callback-provider","issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true,"scopes":["openid","email"],"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base)}});
     if default_pkce {
@@ -151,6 +165,10 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
     .await?
     .into_response()?;
     assert_eq!(created.status, 200);
+    if resume {
+        oauth_authorization_resume(&auth).await?;
+        return B::close(connection).await;
+    }
     if discovery {
         let row = store
             .get_sso_provider("callback-provider")
@@ -334,6 +352,73 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
         }
     }
     B::close(connection).await
+}
+
+async fn oauth_authorization_resume<S: AuthSchema>(auth: &Alibi<S>) -> TestResult {
+    use alibi::store::CreateOAuthClient;
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let redirect = "https://app.fixture.test/callback";
+    for skip_consent in [true, false] {
+        let client_id = format!("sso-resume-{skip_consent}");
+        _ = auth.store().create_oauth_client(CreateOAuthClient {
+            client_id: client_id.clone(),
+            user_id: None,
+            client_secret: None,
+            metadata: json!({
+                "redirect_uris":[redirect],
+                "token_endpoint_auth_method":"none",
+                "grant_types":["authorization_code"],
+                "skip_consent":skip_consent,
+            }),
+            created_at: chrono::Utc::now(),
+        }).await?;
+        let mut authorize = request("/oauth2/authorize", None, "");
+        _ = authorize.headers.insert("sec-fetch-mode".into(), "navigate".into());
+        authorize.set_query_pairs([
+            ("client_id", client_id.as_str()),
+            ("response_type", "code"),
+            ("redirect_uri", redirect),
+            ("scope", "openid"),
+            ("state", "client-state"),
+            ("code_challenge", "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ"),
+            ("code_challenge_method", "S256"),
+        ]);
+        let login = call(auth, authorize, 302).await;
+        let login = url::Url::parse(ORIGIN)?.join(login.headers.get("location").unwrap())?;
+        assert_eq!(login.path(), "/login");
+        let started = call(auth, request("/sign-in/sso", Some(json!({
+            "providerId":"callback-provider",
+            "callbackURL":format!("{ORIGIN}/complete"),
+            "oauth_query":login.query().unwrap(),
+            "serverContext":{"oauthProviderInteraction":"state=forged"}
+        })), ""), 200).await;
+        let grant = client.get(body(&started)["url"].as_str().unwrap()).send().await?;
+        let location = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+        let mut callback = AuthRequest::new(HttpMethod::Get, location.path());
+        callback.headers.extend([
+            ("sec-fetch-mode".into(), "navigate".into()),
+            ("cookie".into(), cookies(&started)),
+        ]);
+        callback.set_query_pairs(location.query_pairs().into_owned());
+        let resumed = call(auth, callback, 302).await;
+        assert!(!cookies(&resumed).is_empty());
+        let resumed = url::Url::parse(ORIGIN)?.join(resumed.headers.get("location").unwrap())?;
+        let query = resumed.query_pairs().into_owned().collect::<std::collections::HashMap<_, _>>();
+        if skip_consent {
+            assert_eq!(resumed.origin().ascii_serialization(), "https://app.fixture.test", "{resumed}");
+            assert_eq!(resumed.path(), "/callback");
+            assert_eq!(query["state"], "client-state");
+            assert!(!query["code"].is_empty());
+        } else {
+            assert_eq!(resumed.path(), "/consent");
+            assert_eq!(query["client_id"], client_id);
+            assert!(!query["sig"].is_empty());
+        }
+    }
+    Ok(())
 }
 
 async fn sso_callback_verifies_id_token_authority_claims_and_userinfo_subject<B: Backend>(

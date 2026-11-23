@@ -35,5 +35,5 @@ for (const mode of ["absent", "undefined", "null", "present", "empty", "date-tex
 }
 await close();
 assert.equal(cases.length, 12);
-await writeFile(new URL("../../../crates/core/src/store/passkey_field_presence_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+await writeFile(new URL("../../../crates/core/src/store/passkey_field_presence_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
 console.log(`${cases.length} actual passkey optional-field memory/SQLite cases`);

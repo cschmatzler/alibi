@@ -38,7 +38,7 @@ async fn check_descriptors<S: AuthSchema>(
     let fixture = native::parse_value(include_str!(
         "../../../../crates/plugins/src/passkey/stored_descriptor_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 18);
     let owner = signup(auth, "descriptors@example.com").await;

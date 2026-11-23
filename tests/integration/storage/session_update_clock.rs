@@ -30,7 +30,7 @@ async fn check<B: Backend>(db: Db, operation: Operation) -> TestResult {
         .await?;
     let fixture: Value =
         serde_json::from_str(include_str!("../../fixtures/session-update-clock.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(fixture["backends"], json!(["sqlite", "postgres", "mysql"]));
     let action = if matches!(operation, Operation::Fields) {
         "fields"

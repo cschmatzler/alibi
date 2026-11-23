@@ -27,13 +27,8 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ headers: {}, ...(body === undefined ? {} : { body }) }),
       });
-      if (body === undefined || body === null || typeof body !== "object") {
-        expect(response.status).toBe(500);
-        expect(response.body).toEqual({
-          message:
-            "An error occurred during hook matcher execution. Check the logs for more details.",
-        });
-      } else if (Array.isArray(body)) {
+      // A missing or primitive body reaches body validation, as without the plugin.
+      if (body === undefined || body === null || typeof body !== "object" || Array.isArray(body)) {
         expect(response.status).toBe(400);
         expect(response.body).toMatchObject({ code: "VALIDATION_ERROR" });
       } else {

@@ -1,5 +1,6 @@
 use alibi_core::entity::AuthAccount;
 use alibi_core::utils::cookie_utils::verify_cookie_value;
+use alibi_core::utils::json::JsString;
 use alibi_core::{AuthConfig, AuthError, AuthResult, OAuthStateStrategy};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
@@ -228,6 +229,22 @@ impl AccountCookiePayload {
         Ok(payload)
     }
 
+    /// Overlay provider `getAccountFields` values written with this account.
+    #[must_use]
+    pub(crate) fn with_account_fields(
+        mut self,
+        fields: Option<&alibi_core::field_policy::FieldValues>,
+    ) -> Self {
+        for (name, value) in fields.into_iter().flatten() {
+            let key = JsString::from(name.clone());
+            _ = self.additional.insert(key.clone(), value.clone());
+            if let Some(snapshot) = &mut self.snapshot {
+                _ = snapshot.insert(key, value.clone());
+            }
+        }
+        self
+    }
+
     pub(crate) fn wire_value(&self) -> AuthResult<alibi_core::utils::json::JsValue> {
         let alibi_core::utils::json::JsValue::Object(current) =
             alibi_core::utils::json::to_js_value(self)?
@@ -284,22 +301,33 @@ pub(crate) fn capture_server_context(
     else {
         return Ok(());
     };
-    let value = alibi_core::utils::json::to_value(&context.0)?;
+    sign_server_context(
+        payload,
+        alibi_core::utils::json::to_value(&context.0)?,
+        state,
+        secret,
+    )
+}
+
+pub(crate) fn sign_server_context(
+    payload: &mut OAuthStatePayload,
+    context: Value,
+    state: &str,
+    secret: &str,
+) -> AuthResult<()> {
     let proof = URL_SAFE_NO_PAD.encode(
-        server_context_mac(secret, state, &value)?
-            .finalize()
-            .into_bytes(),
+        server_context_mac(secret, state, &context)?.finalize().into_bytes(),
     );
-    payload.server_context = Some(value);
+    payload.server_context = Some(context);
     payload.server_context_proof = Some(Value::String(proof));
     Ok(())
 }
 
-pub(crate) fn verified_server_context(
-    payload: &OAuthStatePayload,
+pub(crate) fn authenticated_server_context<'a>(
+    payload: &'a OAuthStatePayload,
     state: &str,
     secret: &str,
-) -> Option<OAuthServerContext> {
+) -> Option<&'a Value> {
     let context = payload.server_context.as_ref()?;
     let proof = payload.server_context_proof.as_ref()?.as_str()?;
     if proof.len() != 43 {
@@ -310,7 +338,16 @@ pub(crate) fn verified_server_context(
         .ok()?
         .verify_slice(&proof)
         .ok()?;
+    Some(context)
+}
+
+pub(crate) fn verified_server_context(
+    payload: &OAuthStatePayload,
+    state: &str,
+    secret: &str,
+) -> Option<OAuthServerContext> {
     // Only an authenticated newly issued value may select a stored user.
+    let context = authenticated_server_context(payload, state, secret)?;
     alibi_core::utils::json::from_slice(&alibi_core::utils::json::to_vec(context).ok()?).ok()
 }
 

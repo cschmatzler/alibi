@@ -30,10 +30,10 @@ const wire = process.argv[2] === "--secondary-wire" || wireFields || wireZero;
 const secondary = process.argv[2] === "--secondary" || secondaryString || transactions || wire;
 assert.ok(process.argv[2] === undefined || omitResult || secondary || stringResult || updatedAt, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const sqlite = new DatabaseSync(":memory:");
@@ -239,7 +239,7 @@ try {
   }
   if (!omitResult && !stringResult && !noUpdateFactory) assert.deepEqual(profiles[0].cases, profiles[1].cases);
   const filename = wireZeroCreated ? "session-timestamp-hooks-secondary-wire-zero-created-at" : createdAtOmit ? "session-created-at-hooks-omit-required" : wireZero ? "session-timestamp-hooks-secondary-wire-zero-ms" : noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt || createdAtOmit ? { field: timestampField } : {}), profiles }) + "\n");
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.27", ...(updatedAt || createdAtOmit ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {
   await sqliteDb.destroy();

@@ -726,8 +726,8 @@ compatScenario(
       usableDecoded.token,
     );
     expect(await rotationFailed.json()).toEqual({ ordinaryError: "refresh encryption failed" });
-    // The successor has no session, so inspect its raw preimage instead of session counts.
-    expect(await counts()).toEqual(before);
+    // Better Auth #12723 keeps the parent refresh token's session on its successor.
+    expect(await counts()).toEqual({ ...before, refresh: before.refresh + 1 });
     const retained = (await (
       await control({ action: "token-row", kind: "refresh", token: usable.refresh_token })
     ).json()) as any;
@@ -737,13 +737,13 @@ compatScenario(
     expect(lastCall).toEqual({
       kind: "encrypt",
       token: `application-refresh-${(await generatorState()).refreshCount}`,
-      sessionId: null,
+      sessionId: usableDecoded.sessionId,
     });
     const successor = (await (
       await control({ action: "token-row", kind: "refresh", token: lastCall.token })
     ).json()) as any;
     expect(successor).not.toBeNull();
-    expect(successor.sessionId ?? null).toBeNull();
+    expect(successor.sessionId).toBe(usableDecoded.sessionId);
     formatterReceipts.push({ phase: "rotation-before-encrypt-error", call: lastCall });
     callCount = (await formatterState()).calls.length;
     expect(
@@ -756,15 +756,17 @@ compatScenario(
       ).json(),
     ).toEqual({ failed: true });
     expect((await formatterState()).calls.length).toBe(callCount);
-    for (const [mode, expected] of [
-      ["async", "R_[object Promise]"],
-      ["empty", "R_"],
-    ]) {
+    // Better Auth #12409 awaits an asynchronous refresh formatter.
+    for (const mode of ["async", "empty"]) {
       await formatterState({ encryptMode: mode });
       const response = await formattedIssue({}, { sessionId: undefined });
       expect(response.status).toBe(200);
       const issued = (await response.json()) as any;
-      expect(issued.refresh_token).toBe(expected);
+      if (mode === "async") {
+        expect(issued.refresh_token).toMatch(/^R_[A-Za-z0-9_-]+$/);
+      } else {
+        expect(issued.refresh_token).toBe("R_");
+      }
       const lastCall = (await formatterState()).calls.at(-1);
       expect(lastCall).toEqual({
         kind: "encrypt",
@@ -778,12 +780,15 @@ compatScenario(
       ).not.toBeNull();
       const introspected = await control({
         action: "introspect",
-        body: { client_id: id, token: expected, token_type_hint: "refresh_token" },
+        body: { client_id: id, token: issued.refresh_token, token_type_hint: "refresh_token" },
       });
-      expect(introspected.status).toBe(500);
+      expect(introspected.status).toBe(mode === "async" ? 200 : 500);
+      if (mode === "async") {
+        expect((await introspected.json()).active).toBe(true);
+      }
       formatterReceipts.push({
         phase: `encode-${mode}`,
-        wire: issued.refresh_token,
+        introspectionStatus: introspected.status,
         call: lastCall,
       });
     }

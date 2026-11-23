@@ -67,9 +67,16 @@ pub struct DpopReplayReservation {
 pub trait DpopReplayStore: Send + Sync {
     async fn reserve(&self, reservation: &DpopReplayReservation) -> Result<bool, DpopError>;
 }
+/// Expired reservations are swept at most this often, so each request does not
+/// scan every proof recorded within the replay window.
+const DPOP_REPLAY_SWEEP_INTERVAL_SECONDS: i64 = 60;
 #[derive(Debug, Default)]
-pub struct InMemoryDpopReplayStore {
-    reservations: Mutex<HashMap<String, Option<DateTime<Utc>>>>,
+pub struct InMemoryDpopReplayStore(Mutex<InMemoryDpopReservations>);
+
+#[derive(Debug, Default)]
+struct InMemoryDpopReservations {
+    rows: HashMap<String, Option<DateTime<Utc>>>,
+    next_sweep: Option<DateTime<Utc>>,
 }
 pub fn create_in_memory_dpop_replay_store() -> InMemoryDpopReplayStore {
     InMemoryDpopReplayStore::default()
@@ -77,18 +84,20 @@ pub fn create_in_memory_dpop_replay_store() -> InMemoryDpopReplayStore {
 #[async_trait]
 impl DpopReplayStore for InMemoryDpopReplayStore {
     async fn reserve(&self, r: &DpopReplayReservation) -> Result<bool, DpopError> {
-        let mut rows = self
-            .reservations
-            .lock()
+        let mut state = self.0.lock()
             .map_err(|_| DpopError::ordinary("DPoP replay store lock poisoned"))?;
-        rows.retain(|_, expires| match (expires, r.now) {
-            (Some(expires), Some(now)) => *expires > now,
-            _ => true,
-        });
-        if rows.contains_key(&r.key) {
+        if let Some(now) = r.now
+            && state.next_sweep.is_none_or(|next| now >= next)
+        {
+            state.rows.retain(|_, expires| expires.is_none_or(|expires| expires > now));
+            state.next_sweep = Some(now + chrono::Duration::seconds(DPOP_REPLAY_SWEEP_INTERVAL_SECONDS));
+        }
+        if let Some(now) = r.now
+            && state.rows.get(&r.key).copied().flatten().is_some_and(|expires| expires > now)
+        {
             return Ok(false);
         }
-        _ = rows.insert(r.key.clone(), r.expires_at);
+        _ = state.rows.insert(r.key.clone(), r.expires_at);
         Ok(true)
     }
 }
@@ -116,6 +125,25 @@ impl<S: AuthSchema> DpopReplayReservations for AuthContext<S> {
         let expires_at = data
             .expires_at
             .ok_or_else(|| DpopError::ordinary("Invalid time value"))?;
+        // Proofs are recorded where verification values live. `increment` is
+        // atomic, so exactly one caller sees the first count.
+        if let Some(cache) = self
+            .config
+            .verification
+            .secondary_storage
+            .as_ref()
+            .filter(|_| !self.config.verification.store_in_database)
+        {
+            let milliseconds = (expires_at - Utc::now()).num_milliseconds().max(0);
+            let seconds = u64::try_from(milliseconds.div_euclid(1000) + i64::from(milliseconds % 1000 != 0))
+                .unwrap_or_default()
+                .max(1);
+            let count = cache
+                .increment(&data.identifier, std::time::Duration::from_secs(seconds))
+                .await
+                .map_err(|error| DpopError::ordinary(auth_message(error)))?;
+            return Ok(count == 1.0);
+        }
         self.verifications()
             .reserve(CreateVerification {
                 identifier: data.identifier,
@@ -694,7 +722,9 @@ pub async fn verify_dpop_proof(
         "{jkt}\n{}\n{normalized}\n{jti}",
         htm.to_uppercase()
     ));
-    let expires_at = date(iat + age);
+    // `now` is floored, so the window above accepts the proof until one
+    // second after `iat + age`. The reservation must outlive it.
+    let expires_at = date(iat + age + 1.0);
     if let Some(store) = options.replay_store
         && !store
             .reserve(&DpopReplayReservation {
@@ -832,3 +862,26 @@ pub async fn enforce_dpop_binding(params: &EnforceDpopBindingParams<'_>) -> Resu
     _ = verify_dpop_proof(&options).await?;
     Ok(())
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod dpop_replay_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn expired_dpop_key_can_be_reused_before_the_next_sweep() {
+        let store = create_in_memory_dpop_replay_store();
+        let first_time = DateTime::from_timestamp(2_000_000_000, 0).unwrap();
+        let expires = first_time + chrono::Duration::seconds(2);
+        let proof = DpopReplayReservation {
+            key: "proof".into(),
+            expires_at: Some(expires),
+            now: Some(first_time),
+        };
+        let (left, right) = tokio::join!(store.reserve(&proof), store.reserve(&proof));
+        assert_ne!(left.unwrap(), right.unwrap());
+        let valid = DpopReplayReservation { now: Some(expires), ..proof };
+        assert!(store.reserve(&valid).await.unwrap());
+    }
+}
+// LCOV_EXCL_STOP

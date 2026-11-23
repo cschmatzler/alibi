@@ -1189,14 +1189,28 @@ mod tests {
             .unwrap();
         assert_eq!(decoded(&extra).0["alg"], "ES256");
         assert_eq!(decoded(&extra).0["typ"], "logout+jwt");
-        // A primary key is provisioned explicitly because upstream's unpinned
-        // fallback uses a previously provisioned live extra key when none exists.
-        plugin.create_jwk(None, None, &ctx).await.unwrap();
+        // A key lazy-minted for a pinned algorithm never stands in for the
+        // primary key: the first unpinned signature mints a primary key.
         let primary = plugin
             .sign_jwt(payload("primary"), &JwtSignOptions::default(), None, &ctx)
             .await
             .unwrap();
         assert_eq!(decoded(&primary).0["alg"], "EdDSA");
+        let again = plugin
+            .sign_jwt(payload("again"), &JwtSignOptions::default(), None, &ctx)
+            .await
+            .unwrap();
+        assert_eq!(decoded(&again).0["kid"], decoded(&primary).0["kid"]);
+        let mut algorithms = ctx
+            .database
+            .list_jwks()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|key| key.alg.unwrap())
+            .collect::<Vec<_>>();
+        algorithms.sort();
+        assert_eq!(algorithms, ["ES256", "EdDSA"]);
         assert!(
             plugin
                 .sign_jwt(
@@ -1227,6 +1241,36 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    // Upstream source: packages/better-auth/src/plugins/jwt/sign-overrides.test.ts :: "keeps signing with an existing key whose algorithm is not configured for pinning".
+    #[tokio::test]
+    async fn unpinned_signature_reuses_an_existing_key_outside_the_pinned_algorithms() {
+        let ctx = test_helpers::create_test_context().await;
+        let plugin = JwtPlugin::with_config(JwtPluginConfig {
+            additional_key_pairs: vec![JwtKeyPairConfig {
+                algorithm: JwtAlgorithm::Es256,
+                modulus_length: None,
+            }],
+            ..Default::default()
+        });
+        let previous = plugin
+            .create_jwk(
+                Some(&JwtKeyPairConfig {
+                    algorithm: JwtAlgorithm::Rs256,
+                    modulus_length: None,
+                }),
+                None,
+                &ctx,
+            )
+            .await
+            .unwrap();
+        let token = plugin
+            .sign_jwt(payload("unpinned"), &JwtSignOptions::default(), None, &ctx)
+            .await
+            .unwrap();
+        assert_eq!(decoded(&token).0["kid"], previous.id.as_str());
+        assert_eq!(decoded(&token).0["alg"], "RS256");
     }
 
     #[tokio::test]
@@ -1454,10 +1498,10 @@ mod tests {
     #[tokio::test]
     async fn signs_pinned_typescript_encrypted_key_and_refuses_a_changed_secret() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../tests/fixtures/jwt/typescript-1.7.18-encrypted-jwk.json"
+            "../../../../tests/fixtures/jwt/typescript-1.7.27-encrypted-jwk.json"
         ))
         .unwrap();
-        assert_eq!(fixture["referenceVersion"], "better-auth@1.7.18");
+        assert_eq!(fixture["referenceVersion"], "better-auth@1.7.27");
         let config = alibi_core::AuthConfig::new(fixture["secret"].as_str().unwrap())
             .base_url(fixture["origin"].as_str().unwrap());
         let ctx = test_helpers::create_test_context_with_config(config.clone()).await;

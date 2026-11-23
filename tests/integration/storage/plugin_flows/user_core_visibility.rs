@@ -52,7 +52,7 @@ async fn core_user_output_visibility_matches_actual_projection<B: Backend>(db: D
     let fixture = native::parse_value(include_str!(
         "../../../../crates/core/src/store/user_core_visibility_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 7);
     let (connection, _) = db.migrated::<B>(SECRET).await?;

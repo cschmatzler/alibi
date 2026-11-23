@@ -6,7 +6,7 @@ import { apiKey } from "../reference-server/node_modules/@better-auth/api-key/di
 import { config } from "../reference-server/probes/schema-parity.mjs";
 import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
-assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/api-key/package.json", import.meta.url))).version, "1.7.18");
+assert.equal(JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/api-key/package.json", import.meta.url))).version, "1.7.27");
 const database = await createMysqlDatabase({ connectionLimit: 4 });
 try {
   await (await getMigrations({ ...config, database: { type: "mysql", db: database.db } })).runMigrations();
@@ -66,7 +66,7 @@ try {
     denied: resetResults.filter(result => !result.valid && result.error?.code === denialCode).length, code: denialCode,
     requestCount: resetRows[0].requestCount, reset: resetRows[0].lastRequest.getTime() > Date.UTC(2000, 0, 1, 0, 0, 0, 123) };
   assert.deepEqual(resetConcurrent, { ...rateConcurrent, reset: true });
-  await writeFile(new URL("../../fixtures/mysql-api-key-usage.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases, concurrent, refill_concurrent: refillConcurrent, rate_concurrent: rateConcurrent, reset_concurrent: resetConcurrent }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-api-key-usage.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases, concurrent, refill_concurrent: refillConcurrent, rate_concurrent: rateConcurrent, reset_concurrent: resetConcurrent }) + "\n");
   console.log(`${cases.length} actual MySQL sequential API-key cases and four eight-call quota/refill/rate/reset bursts`);
 } finally {
   await database.close();

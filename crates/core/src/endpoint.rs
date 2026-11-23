@@ -435,6 +435,13 @@ impl EndpointCall {
         self.state.lock_unpoisoned().session_observation = Some((user, session));
     }
 
+    /// Forget the session this call observed, so completed hooks see none.
+    pub fn clear_session_hook_snapshot(&self) {
+        let mut state = self.state.lock_unpoisoned();
+        state.session_observation = None;
+        state.principal = None;
+    }
+
     #[must_use]
     pub fn session_hook_snapshot(&self) -> Option<(UserView, SessionView)> {
         self.state.lock_unpoisoned().session_observation.clone()

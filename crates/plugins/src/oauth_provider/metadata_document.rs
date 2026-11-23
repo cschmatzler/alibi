@@ -174,7 +174,10 @@ impl OAuthProviderPlugin {
                 .cloned()
                 .collect(),
         );
-        let mut metadata = match self.admit_metadata_for_source(metadata, &scopes, ctx, true)? {
+        let source = Some((input.client_discovery_id.as_str(), input.client_id.as_str()));
+        let mut metadata = match Box::pin(self.admit_metadata_for_source(
+            metadata, &scopes, ctx, source, None,
+        )).await? {
             Ok(metadata) => metadata,
             Err(response) => match response.into_output::<Value>() {
                 Err(error) => return Err(DocumentWriteError::Endpoint(error)),
@@ -200,10 +203,20 @@ impl OAuthProviderPlugin {
             "client_discovery_id".into(),
             json!(input.client_discovery_id),
         );
-        // Canonical persistence explicitly clears applicationType; other absent
-        // remote fields stay undefined and the initialized adapter filters them out.
         _ = metadata.entry("application_type").or_insert(Value::Null);
         if existing.is_some() {
+            // Document-owned fields are cleared on omission. Subject type is
+            // preserved because changing it changes the client's user identifiers.
+            for name in [
+                "client_name", "client_uri", "logo_uri", "tos_uri", "policy_uri",
+                "jwks", "jwks_uri", "software_id", "software_version",
+                "software_statement", "dpop_bound_access_tokens",
+            ] {
+                _ = metadata.entry(name).or_insert(Value::Null);
+            }
+            for name in ["contacts", "post_logout_redirect_uris", "response_types"] {
+                _ = metadata.entry(name).or_insert_with(|| json!([]));
+            }
             // Server-owned fields (disabled, consent and logout settings, the
             // client_credentials ceiling) can change while a refresh fetches
             // metadata, so the refresh never writes them.
@@ -265,7 +278,14 @@ impl OAuthProviderPlugin {
                 updated_at: now,
             })
             .await
-            .map_err(DocumentWriteError::Store)?
+            .map_err(|error| {
+                DocumentWriteError::Store(match error {
+                    OAuthClientRegistrationWriteError::Failure(cause) => {
+                        OAuthClientRegistrationWriteError::classify(cause, None)
+                    }
+                    collision => collision,
+                })
+            })?
             .ok_or_else(|| {
                 DocumentWriteError::Endpoint(document_error(
                     "invalid_client",

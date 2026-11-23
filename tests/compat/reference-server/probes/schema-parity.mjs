@@ -62,5 +62,5 @@ const schema = Object.fromEntries(
     },
   ]),
 );
-export const snapshot = { version: "1.7.18", tables: schema };
+export const snapshot = { version: "1.7.27", tables: schema };
 if (import.meta.main) console.log(JSON.stringify(snapshot, null, 2));

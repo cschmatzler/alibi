@@ -676,6 +676,7 @@ fn mock_oauth_plugin_at(
                 }),
                 get_user_info: None,
                 refresh_access_token: None,
+                get_account_fields: None,
                 verify_id_token: None,
                 id_token: None,
                 disable_id_token_sign_in: false,
@@ -727,6 +728,7 @@ fn mock_oauth_plugin_at(
                 refresh_access_token: Some(Arc::new(CompatGoogleRefreshHandler {
                     mode: oauth_refresh_mode,
                 })),
+                get_account_fields: None,
                 id_token: None,
                 disable_id_token_sign_in: false,
                 verify_id_token: Some(Arc::new(CompatGoogleIdTokenVerifier {
@@ -2795,7 +2797,7 @@ async fn shutdown_signal() {
 
 /// The pinned upstream release this fixture claims parity with; the harness
 /// refuses to compare against a reference server reporting another version.
-const UPSTREAM_VERSION: &str = "1.7.18";
+const UPSTREAM_VERSION: &str = "1.7.27";
 
 async fn health_check() -> impl IntoResponse {
     axum::Json(serde_json::json!({ "ok": true, "upstreamVersion": UPSTREAM_VERSION }))

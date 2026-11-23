@@ -287,9 +287,31 @@ impl VerificationPublication {
     }
 }
 
+/// Minimum time between two sweeps of every expired verification row.
+const VERIFICATION_CLEANUP_INTERVAL_MS: i64 = 60_000;
+
+/// Throttles the expired-row sweep of verification lookups to once a minute
+/// per auth instance. Clones share one schedule.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct VerificationCleanupSchedule(Arc<std::sync::atomic::AtomicI64>);
+
+impl VerificationCleanupSchedule {
+    /// Claim the sweep due at `now` (Unix milliseconds), deferring the next one
+    /// by the cleanup interval. Concurrent callers cannot claim the same sweep.
+    fn claim(&self, now: i64) -> bool {
+        use std::sync::atomic::Ordering;
+        self.0
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |next| {
+                (now >= next).then_some(now + VERIFICATION_CLEANUP_INTERVAL_MS)
+            })
+            .is_ok()
+    }
+}
+
 pub struct VerificationService<'a, S: AuthSchema> {
     config: &'a VerificationConfig,
     database: &'a dyn AuthStore<S>,
+    cleanup_schedule: VerificationCleanupSchedule,
 }
 impl<S: AuthSchema> AuthContext<S> {
     #[must_use]
@@ -297,6 +319,7 @@ impl<S: AuthSchema> AuthContext<S> {
         VerificationService {
             config: &self.config.verification,
             database: self.database.as_ref(),
+            cleanup_schedule: self.extensions.cloned_or_default(),
         }
     }
 }
@@ -434,8 +457,23 @@ impl<S: AuthSchema> VerificationService<'_, S> {
                 break;
             }
         }
-        if !self.config.disable_cleanup {
+        if self.config.disable_cleanup {
+            return Ok(found.as_ref().map(VerificationSnapshot::from_model));
+        }
+        let now = Utc::now().timestamp_millis();
+        if self.cleanup_schedule.claim(now) {
             _ = self.database.delete_expired_verifications().await?;
+        } else if let Some(found) = &found
+            && found.expires_at().timestamp_millis() < now
+        {
+            // Not every reader checks the expiry, so a lookup that finds an
+            // expired row deletes every expired row of that identifier and no
+            // later lookup returns one. The throttled sweep above only bounds
+            // table growth.
+            _ = self
+                .database
+                .delete_expired_verifications_by_identifier(found.identifier())
+                .await?;
         }
         Ok(found.as_ref().map(VerificationSnapshot::from_model))
     }
@@ -705,5 +743,66 @@ mod tests {
                 .unwrap();
             assert_eq!(cached.expires_at().unwrap(), date);
         }
+    }
+
+    /// Upstream #12593 and #12626: lookups sweep every expired row at most once
+    /// a minute, and a lookup that finds an expired row deletes that
+    /// identifier's expired rows so no later lookup returns one.
+    #[tokio::test]
+    async fn lookups_throttle_the_sweep_and_drop_an_expired_match() {
+        use crate::store::VerificationStore;
+        let store = Arc::new(crate::test_store::MemoryStore::default());
+        let config = Arc::new(crate::AuthConfig::new("verification-cleanup-test-secret"));
+        let context = AuthContext::<crate::test_store::BundledSchema>::new(
+            config.clone(),
+            store.clone(),
+        );
+        let service = context.verifications();
+        let create = |identifier: &str, minutes: i64| CreateVerification {
+            identifier: identifier.into(),
+            value: "value".into(),
+            expires_at: Utc::now() + Duration::minutes(minutes),
+        };
+        let remaining = |identifier: &'static str| {
+            let store = Arc::clone(&store);
+            async move {
+                store
+                    .get_latest_verification_by_identifier(identifier)
+                    .await
+                    .unwrap()
+                    .is_some()
+            }
+        };
+
+        // The first lookup sweeps.
+        _ = store.create_verification(create("first", -1)).await.unwrap();
+        assert!(service.find("missing").await.unwrap().is_none());
+        assert!(!remaining("first").await);
+
+        // Within the interval, an unrelated lookup leaves expired rows alone.
+        _ = store.create_verification(create("other", -1)).await.unwrap();
+        _ = store.create_verification(create("found", -1)).await.unwrap();
+        assert!(service.find("missing").await.unwrap().is_none());
+        assert!(remaining("other").await);
+
+        // A lookup that finds an expired row still returns it once, then
+        // removes that identifier's expired rows only.
+        let found = service.find("found").await.unwrap().unwrap();
+        assert!(found.is_expired());
+        assert!(!remaining("found").await);
+        assert!(remaining("other").await);
+        assert!(service.find("found").await.unwrap().is_none());
+
+        // Clones of one auth context share the schedule.
+        let cloned = context.clone();
+        let service = cloned.verifications();
+        assert!(service.find("missing").await.unwrap().is_none());
+        assert!(remaining("other").await);
+
+        // A fresh instance sweeps again even when it uses the same config and store.
+        let fresh = AuthContext::<crate::test_store::BundledSchema>::new(config, store.clone());
+        let service = fresh.verifications();
+        assert!(service.find("missing").await.unwrap().is_none());
+        assert!(!remaining("other").await);
     }
 }

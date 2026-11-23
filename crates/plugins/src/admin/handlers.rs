@@ -296,44 +296,56 @@ pub(crate) async fn create_user_core(
         .additional_fields
         .retain(|name, _| fields.contains_key(name));
 
-    let user = ctx
-        .database
-        .create_user_with_source_record(
-            create_user,
-            alibi_core::user_validation::UserValidationSource::creation("admin"),
-        )
-        .await?;
-
-    if let Some(password) = body
+    // Hash before creating the user so a hasher rejection (for example the
+    // Have I Been Pwned check) leaves no orphan user behind.
+    let password_hash = match body
         .password
         .as_deref()
         .filter(|password| !password.is_empty())
     {
-        let password_hash = ctx
-            .hash_password(
+        Some(password) => Some(
+            ctx.hash_password(
                 password_policy
                     .as_ref()
                     .and_then(|policy| policy.password_hasher.as_ref()),
                 password,
             )
-            .await?;
-        _ = ctx
-            .database
-            .create_account_record(CreateAccount {
-                additional_fields: FieldValues::default(),
-                user_id: user.id().to_string(),
-                account_id: user.id().to_string().into(),
-                provider_id: "credential".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: Some(password_hash),
-            })
-            .await?;
-    }
+            .await?,
+        ),
+        None => None,
+    };
+
+    // The user and its credential account are created atomically, so a failed
+    // account insert cannot block a retry with the same email.
+    let user = alibi_core::store::transaction(ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            let user = tx
+                .create_user_with_source_record(
+                    create_user,
+                    alibi_core::user_validation::UserValidationSource::creation("admin"),
+                )
+                .await?;
+            if let Some(password_hash) = password_hash {
+                _ = tx
+                    .create_account_record(CreateAccount {
+                        additional_fields: FieldValues::default(),
+                        user_id: user.id().to_string(),
+                        account_id: user.id().to_string().into(),
+                        provider_id: "credential".to_owned(),
+                        access_token: None,
+                        refresh_token: None,
+                        id_token: None,
+                        access_token_expires_at: None,
+                        refresh_token_expires_at: None,
+                        scope: None,
+                        password: Some(password_hash),
+                    })
+                    .await?;
+            }
+            Ok(user)
+        })
+    })
+    .await?;
 
     Ok(UserResponse {
         user: ctx.user_view(&user)?,

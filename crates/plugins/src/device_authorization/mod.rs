@@ -962,6 +962,75 @@ mod tests {
         test_helpers::create_auth_request(HttpMethod::Get, "/device", Some(token), None, query)
     }
 
+    // a277020fa rereads the row after a lost claim. The trigger makes the
+    // competing claim or deletion happen between the lookup and update.
+    #[tokio::test]
+    async fn test_device_verify_rereads_after_losing_claim() {
+        use alibi_seaorm::sea_orm::ConnectionTrait;
+        use alibi_seaorm::{Database, SeaOrmStore};
+
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await
+            .unwrap();
+        let config = test_helpers::create_test_config().base_url("https://device.fixture.test");
+        let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+        let ctx = AuthContext::new(Arc::new(config), Arc::new(store));
+        let (_, session) = test_helpers::create_user_and_session(
+            &ctx,
+            CreateUser::new()
+                .with_email("device-claim@fixture.test")
+                .with_name("Reviewer"),
+            Duration::hours(1),
+        )
+        .await;
+        let plugin = DeviceAuthorizationPlugin::new();
+        for (operation, status) in [
+            (r#"UPDATE "deviceCode" SET "userId"=NEW."userId" WHERE id=OLD.id"#, 200),
+            (r#"DELETE FROM "deviceCode" WHERE id=OLD.id"#, 400),
+        ] {
+            let issued = plugin
+                .handle_device_code(
+                    &test_helpers::create_auth_json_request_no_query(
+                        HttpMethod::Post,
+                        "/device/code",
+                        None,
+                        Some(serde_json::json!({"client_id":"client","scope":"read"})),
+                    ),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+            assert_eq!(issued.status, 200);
+            let issued = json_body(&issued);
+            let user_code = issued.get("user_code").and_then(Value::as_str).unwrap();
+            _ = database
+                .execute_unprepared(&format!(
+                    r#"CREATE TRIGGER compete BEFORE UPDATE OF "userId" ON "deviceCode"
+                       BEGIN {operation}; SELECT RAISE(IGNORE); END"#,
+                ))
+                .await
+                .unwrap();
+            let verified = plugin
+                .handle_device_verify(&device_claim_request(user_code, &session.token), &ctx)
+                .await
+                .unwrap();
+            assert_eq!(verified.status, status);
+            if status == 200 {
+                assert_eq!(
+                    json_body(&verified),
+                    serde_json::json!({"user_code":user_code,"status":"pending","client_id":"client","scope":"read"})
+                );
+            } else {
+                assert_eq!(
+                    json_body(&verified),
+                    serde_json::json!({"error":"invalid_request","error_description":INVALID_USER_CODE})
+                );
+            }
+            _ = database.execute_unprepared("DROP TRIGGER compete").await.unwrap();
+        }
+    }
+
     async fn create_context_with_user(
         email: &str,
     ) -> (
@@ -1085,6 +1154,33 @@ mod tests {
         );
 
         let response = plugin.handle_device_code(&request, &ctx).await.unwrap();
+        let body = json_body(&response);
+
+        assert_eq!(response.status, 400);
+        assert_eq!(
+            (*(body).get("error").unwrap_or(&Value::Null)),
+            "invalid_client"
+        );
+        assert_eq!(
+            (*(body).get("error_description").unwrap_or(&Value::Null)),
+            INVALID_CLIENT_ID
+        );
+    }
+
+    // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: "should return invalid_client when validateClient rejects client_id on /device/token".
+    #[tokio::test]
+    async fn test_device_token_rejects_invalid_client() {
+        let plugin = DeviceAuthorizationPlugin::new()
+            .validate_client(|client_id| async move { Ok(client_id == "valid-client") });
+        let ctx = test_helpers::create_test_context().await;
+
+        let response = plugin
+            .handle_device_token(
+                &device_token_request("some-device-code", "invalid-client"),
+                &ctx,
+            )
+            .await
+            .unwrap();
         let body = json_body(&response);
 
         assert_eq!(response.status, 400);

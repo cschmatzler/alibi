@@ -9,11 +9,11 @@ export async function createMysqlDatabase({ connectionLimit = 1 } = {}) {
   const mysql = (await import(process.env.MYSQL2_MODULE_URL)).default;
   const driver = JSON.parse(await readFile(new URL("package.json", process.env.MYSQL2_MODULE_URL)));
   const pin = JSON.parse(await readFile(new URL("../../upstream-source.json", import.meta.url)));
-  assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-  assert.equal(pin.version, "1.7.18");
-  assert.equal(JSON.parse(await readFile(new URL("../../reference-server/node_modules/better-auth/package.json", import.meta.url))).version, "1.7.18");
+  assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+  assert.equal(pin.version, "1.7.27");
+  assert.equal(JSON.parse(await readFile(new URL("../../reference-server/node_modules/better-auth/package.json", import.meta.url))).version, "1.7.27");
   for (const name of ["core", "passkey", "kysely-adapter"]) {
-    assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
+    assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.27");
   }
   const database = `alibi_oracle_${randomBytes(8).toString("hex")}`;
   const config = { socketPath: process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, user: "root", charset: "utf8mb4", timezone: "Z", connectionLimit };

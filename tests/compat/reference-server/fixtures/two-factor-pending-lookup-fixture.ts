@@ -9,10 +9,10 @@ function phase(sql: string) {
   const query = sql.toLowerCase();
 
   if (query.startsWith("select") && query.includes('from "verification"')) {
-    return query.includes('"identifier"') && query.includes('"identifier" =')
-      ? "lookup"
-      : query.includes('"expiresat" <')
-        ? "cleanup-read"
+    return query.includes('"expiresat" <')
+      ? "cleanup-read"
+      : query.includes('"identifier" =')
+        ? "lookup"
         : undefined;
   }
 
@@ -153,6 +153,11 @@ export async function createTwoFactorPendingLookupFixture(
         receipts.length = 0;
         armed = true;
         return Response.json({ armed: true });
+      }
+
+      if (body.action === "prime-cleanup") {
+        await context.internalAdapter.findVerificationValue("pending-cleanup-probe");
+        return Response.json({ primed: true });
       }
 
       if (body.action === "delivery") {

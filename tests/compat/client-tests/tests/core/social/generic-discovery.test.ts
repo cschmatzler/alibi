@@ -17,6 +17,7 @@ type State = {
 type Receipt = {
   path: string;
   authorization?: string | null;
+  grantHeader?: string | null;
   body?: [string, string][];
   raw?: string;
 };
@@ -183,6 +184,8 @@ for (const mode of ["success", "override", "fallback", "invalid-issuer", "mapped
         refreshToken: "rotated-refresh",
       });
       const refreshGrant = (await receipts(ctx)).filter((r) => r.path.startsWith("/token"))[1]!;
+      // Better Auth #12401 sends authorizationHeaders on refresh as well.
+      expect(refreshGrant.grantHeader).toBe("configured-grant");
       expect(Object.fromEntries(refreshGrant.body!)).toMatchObject({
         grant_type: "refresh_token",
         refresh_token: "discovery-refresh",

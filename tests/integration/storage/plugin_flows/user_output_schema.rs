@@ -8,7 +8,7 @@ async fn initialized_user_output_omits_disabled_plugin_columns<B: Backend>(db: D
     let fixture = native::parse_value(include_str!(
         "../../../../crates/core/src/store/user_disabled_plugin_output_cases.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 4);
     for case in cases {

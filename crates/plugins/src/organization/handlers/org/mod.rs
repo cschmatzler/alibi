@@ -366,12 +366,6 @@ pub(crate) async fn delete_organization_core(
         ));
     }
 
-    if session.active_organization_id() == Some(body.organization_id.as_str()) {
-        _ = ctx
-            .database
-            .update_session_active_organization_record(session.token(), None)
-            .await?;
-    }
     let Some(organization) = ctx
         .database
         .get_organization_by_id(&body.organization_id)
@@ -402,6 +396,14 @@ pub(crate) async fn delete_organization_core(
     ctx.database
         .delete_organization(&body.organization_id)
         .await?;
+    // Cleared only once the organization is actually deleted, so a rejecting
+    // `before_delete` hook keeps the session's active organization.
+    if session.active_organization_id() == Some(body.organization_id.as_str()) {
+        _ = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
+    }
     if let Some(hooks) = &config.deletion_hooks {
         hooks.after_delete(&callback).await?;
     }

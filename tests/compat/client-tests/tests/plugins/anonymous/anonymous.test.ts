@@ -25,6 +25,31 @@ function actor(ctx: ScenarioContext, name: string, mode = "standard") {
   };
 }
 
+compatScenario(
+  "anonymous sign-in rejects a foreign origin before issuing a session",
+  async (ctx) => {
+    const guest = actor(ctx, "origin-guest");
+    const path = `${authProfilePath(guest.profile)}/sign-in/anonymous`;
+    const denied = await guest.fetch(`${ctx.baseURL}${path}`, {
+      method: "POST",
+      headers: { origin: "https://untrusted.example" },
+    });
+    expect(denied.status).toBe(403);
+    expect(denied.headers.getSetCookie()).toEqual([]);
+    const rejection = await denied.json();
+    expect(rejection).toMatchObject({ code: "INVALID_ORIGIN" });
+    const issued = await guest.fetch(`${ctx.baseURL}${path}`, {
+      method: "POST",
+      headers: { origin: ctx.baseURL },
+    });
+    expect(issued.status).toBe(200);
+    const session = await issued.json();
+    expect(session.user.isAnonymous).toBe(true);
+    return ctx.snapshot({ rejection, session });
+  },
+  ["POST /sign-in/anonymous"],
+);
+
 async function state(ctx: ScenarioContext): Promise<State> {
   const response = await ctx.rawRequest({ path: "/__test/anonymous/state" });
   expect(response.status).toBe(200);

@@ -411,7 +411,7 @@ pub(crate) async fn get_invitation_core(
         .get_invitation_by_id(&query.id)
         .await?
         .filter(|invitation| invitation.is_pending() && !invitation.is_expired())
-        .ok_or_else(|| AuthError::bad_request("Invitation not found!"))?;
+        .ok_or_else(|| super::extension_common::org_error(400, codes::INVITATION_NOT_FOUND))?;
     if user
         .email()
         .is_none_or(|email| email.to_lowercase() != invitation.email().to_lowercase())
@@ -724,17 +724,7 @@ pub(crate) async fn handle_get_invitation(
         Err(error) => return Err(error),
     };
     let query = parse_query::<GetInvitationQuery>(&req.query);
-    let response = match get_invitation_core(&query, &user, config, ctx).await {
-        // This endpoint uses a plain APIError upstream. Its not-found payload
-        // deliberately lacks the code attached by accept/reject invitation.
-        Err(AuthError::BadRequest(message)) if message == "Invitation not found!" => {
-            return Ok(AuthResponse::json(
-                400,
-                &serde_json::json!({ "message": message }),
-            )?);
-        }
-        result => result?,
-    };
+    let response = get_invitation_core(&query, &user, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
 

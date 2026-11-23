@@ -29,15 +29,16 @@ impl OAuthProviderPlugin {
         client_id: Option<&str>,
     ) -> Result<Value, EndpointError> {
         Ok(self
-            .resolve_access_token_validation(ctx, token, client_id)
+            .resolve_access_token_validation(ctx, token, client_id, None)
             .await?
             .payload)
     }
-    async fn resolve_access_token_validation<S: AuthSchema>(
+    pub(super) async fn resolve_access_token_validation<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         token: &str,
         client_id: Option<&str>,
+        request: Option<&alibi_core::AuthRequest>,
     ) -> Result<AccessTokenValidation, EndpointError> {
         let decoded = self.decode_token_prefix(token, OAuthTokenKind::Access);
         // A prefix may introduce JWT separators. With prefix presentation in
@@ -66,8 +67,13 @@ impl OAuthProviderPlugin {
             && !prefixed_opaque
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
         {
-            Box::pin(jwt.verify_signed_payload_with_optional_kid(token, None, ctx))
-                .await?
+            let verification = Box::pin(jwt.verify_signed_payload_with_optional_kid(token, request, ctx))
+                .await;
+            match verification {
+                Ok(claims) => claims,
+                Err(error) if error.status_code() == 400 => None,
+                Err(error) => return Err(error.into()),
+            }
                 .filter(|claims| {
                     claims.get("iss").and_then(Value::as_str) == Some(expected_issuer.as_str())
                         && ["iat", "nbf", "exp"]
@@ -232,7 +238,7 @@ impl OAuthProviderPlugin {
         }
         if !resources.is_empty() {
             let mut audiences = resources;
-            let userinfo = format!("{}/oauth2/userinfo", base_url(ctx));
+            let userinfo = super::endpoint_url(ctx, "/oauth2/userinfo");
             if scopes_contain(&row.metadata, "openid") && !audiences.contains(&userinfo) {
                 audiences.push(userinfo);
             }
@@ -269,7 +275,7 @@ impl OAuthProviderPlugin {
         client_id: Option<&str>,
     ) -> Result<Value, EndpointError> {
         Ok(self
-            .require_active_access_token_with_claims(ctx, token, client_id)
+            .require_active_access_token_with_claims(ctx, token, client_id, None)
             .await?
             .payload)
     }
@@ -278,9 +284,10 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
         token: &str,
         client_id: Option<&str>,
+        request: Option<&alibi_core::AuthRequest>,
     ) -> Result<AccessTokenValidation, EndpointError> {
         let validation = self
-            .resolve_access_token_validation(ctx, token, client_id)
+            .resolve_access_token_validation(ctx, token, client_id, request)
             .await?;
         if validation.payload.get("active") == Some(&Value::Bool(true)) {
             Ok(validation)
@@ -316,7 +323,7 @@ fn base_url<S: AuthSchema>(ctx: &AuthContext<S>) -> String {
         ctx.config.base_path
     )
 }
-fn issuer<S: AuthSchema>(ctx: &AuthContext<S>, disabled: bool) -> String {
+pub(super) fn issuer<S: AuthSchema>(ctx: &AuthContext<S>, disabled: bool) -> String {
     if !disabled
         && let Some(value) = ctx
             .extensions
@@ -327,7 +334,7 @@ fn issuer<S: AuthSchema>(ctx: &AuthContext<S>, disabled: bool) -> String {
     }
     base_url(ctx)
 }
-fn audience_values(value: Option<&Value>) -> Option<Vec<String>> {
+pub(super) fn audience_values(value: Option<&Value>) -> Option<Vec<String>> {
     match value {
         None => Some(Vec::new()),
         Some(Value::String(value)) => Some(vec![value.clone()]),
@@ -338,7 +345,7 @@ fn audience_values(value: Option<&Value>) -> Option<Vec<String>> {
         _ => None,
     }
 }
-async fn audiences_allowed<S: AuthSchema>(
+pub(super) async fn audiences_allowed<S: AuthSchema>(
     provider: &OAuthProviderPlugin,
     ctx: &AuthContext<S>,
     audiences: &[String],
@@ -346,7 +353,7 @@ async fn audiences_allowed<S: AuthSchema>(
     if audiences.len() > 64 {
         return Ok(false);
     }
-    let userinfo = format!("{}/oauth2/userinfo", base_url(ctx));
+    let userinfo = super::endpoint_url(ctx, "/oauth2/userinfo");
     for audience in audiences {
         if audience != &userinfo && provider.get_resource(ctx, audience).await?.is_none() {
             return Ok(false);
@@ -378,9 +385,7 @@ fn scopes_contain(metadata: &Value, scope: &str) -> bool {
         .is_some_and(|values| values.iter().any(|value| value == scope))
 }
 fn invalid_access_token() -> EndpointError {
-    let mut headers = alibi_core::Headers::new();
-    _ = headers.insert(
-        "WWW-Authenticate",
+    let headers = super::clients::challenge_headers(
         "Bearer error=\"invalid_token\", error_description=\"Invalid access token\"",
     );
     EndpointError {

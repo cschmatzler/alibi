@@ -9,10 +9,10 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-assert.equal(pin.version, "1.7.18");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+assert.equal(pin.version, "1.7.27");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, "1.7.27");
 }
 assert.ok(process.env.BETTER_AUTH_TEST_POSTGRES_URL, "requires a disposable PostgreSQL database URL");
 const mysql = await createMysqlDatabase();
@@ -59,7 +59,7 @@ try {
     profiles.push({ backend, cases });
   }
   for (const profile of profiles) assert.deepEqual(profile.cases, profiles[0].cases);
-  await writeFile(new URL("../../fixtures/session-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
+  await writeFile(new URL("../../fixtures/session-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
   console.log("Six actual SQLite/PostgreSQL/MySQL session update/readback clock cases");
 } finally {
   await sqliteDb.destroy();

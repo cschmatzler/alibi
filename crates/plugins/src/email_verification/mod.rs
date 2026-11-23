@@ -455,14 +455,25 @@ pub(crate) async fn send_custom_verification_email(
     .await
 }
 
-/// Password registration emits verification before creating its session. The
-/// transaction handle keeps OTP challenges in the same transaction as the user.
+/// Password registration sends its verification email once the new user is
+/// saved, so a sign-up that rolls back sends nothing. Delivery failures are
+/// logged and never fail the committed sign-up.
 pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
     user: &impl AuthUser,
     callback_url: Option<&str>,
     required: bool,
     ctx: &AuthContext<S>,
-    tx: &dyn alibi_core::store::AuthTransaction<S>,
+) {
+    if let Err(error) = deliver_signup_verification(user, callback_url, required, ctx).await {
+        tracing::error!(%error, "Failed to send the sign-up verification email");
+    }
+}
+
+async fn deliver_signup_verification<S: alibi_core::AuthSchema>(
+    user: &impl AuthUser,
+    callback_url: Option<&str>,
+    required: bool,
+    ctx: &AuthContext<S>,
 ) -> AuthResult<()> {
     let config = ctx.extensions.get::<EmailVerificationConfig>();
     if !config
@@ -478,7 +489,7 @@ pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
         .is_none_or(|config| config.send_verification_email.is_none())
         && let Some(sender) = ctx.email_verification_override()
     {
-        return sender.0.send_in_transaction(&user, None, ctx, tx).await;
+        return sender.0.send(&user, None, ctx).await;
     }
     let Some(config) = config else {
         return Ok(());
@@ -504,7 +515,7 @@ pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
         user,
         url,
         token,
-        ctx.config.awaited_notification_errors,
+        alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
     )
     .await
 }

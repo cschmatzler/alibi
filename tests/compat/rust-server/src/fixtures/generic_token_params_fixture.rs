@@ -500,6 +500,7 @@ pub(crate) async fn router(
             refresh_access_token: (mode == "dynamic-custom").then(|| {
                 Arc::new(CustomRefresh(fixture.clone())) as Arc<dyn OAuthRefreshTokenHandler>
             }),
+            get_account_fields: None,
             verify_id_token: None,
             id_token: None,
             disable_id_token_sign_in: false,

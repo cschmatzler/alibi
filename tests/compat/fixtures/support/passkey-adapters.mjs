@@ -8,10 +8,10 @@ import { passkey } from "../../reference-server/node_modules/@better-auth/passke
 
 export async function createPasskeyAdapters(generateId = false) {
   const pin = JSON.parse(await readFile(new URL("../../upstream-source.json", import.meta.url)));
-  assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-  assert.equal(pin.version, "1.7.18");
+  assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
+  assert.equal(pin.version, "1.7.27");
   for (const name of ["passkey", "memory-adapter", "kysely-adapter"]) {
-    assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
+    assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.27");
   }
   const plugin = passkey();
   const options = { plugins: [plugin], advanced: { database: { generateId } } };

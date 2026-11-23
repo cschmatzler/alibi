@@ -414,21 +414,31 @@ compatScenario(
       }
     }
 
-    const missingRequest = await control({
+    const headersOnly = await control({
       action: "signin",
       headers: { cookie: oldCookie, origin: ctx.baseURL },
       body: { email, password: "password123", oauth_query: signed },
     });
-    expect(missingRequest.status, `${ctx.baseURL}:missing-request`).toBe(401);
-    expect(await missingRequest.json()).toEqual({
-      error: "invalid_request",
-      error_description: "request not found",
-    });
-    expect(cookies(missingRequest)).not.toBe("");
-    const afterFailure = await (
-      await control({ action: "session", headers: { cookie: cookies(missingRequest) } })
+    expect(headersOnly.status).toBe(200);
+    const continuation = await headersOnly.json();
+    expect(continuation.redirect).toBe(true);
+    // Better Auth #12325 runs authorization policy with logical headers on SDK calls.
+    expect(signedQuery(continuation.url).pathname).toBe("/post-login");
+    expect(cookies(headersOnly)).not.toBe("");
+    const continuedSession = await (
+      await control({ action: "session", headers: { cookie: cookies(headersOnly) } })
     ).json();
-    expect(afterFailure.user.id).toBe(owner.user.id);
+    expect(continuedSession.user.id).toBe(owner.user.id);
+    expect(await receipts()).toEqual([
+      { stage: "signup", sessionId: continuedSession.session.id },
+      expect.objectContaining({
+        stage: "postLogin",
+        decision: null,
+        isContinuation: false,
+        session: expect.objectContaining({ id: continuedSession.session.id }),
+        user: expect.objectContaining({ id: owner.user.id }),
+      }),
+    ]);
     const ordinary = await control({ action: "signin", body: { email, password: "password123" } });
     expect(ordinary.status).toBe(200);
     const authenticated = await ordinary.json();
@@ -445,7 +455,7 @@ compatScenario(
       issued,
       authorizationSession: issuedSession,
       proof,
-      afterFailure,
+      continuedSession,
       authenticated,
       policyResults,
     });

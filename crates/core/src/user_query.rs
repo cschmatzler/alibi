@@ -82,7 +82,7 @@ fn operand_number(value: &JsValue) -> Option<f64> {
 
 /// Compare physical primitive values, not their public string projections.
 pub(crate) fn matches_native_operand(lhs: &JsValue, rhs: &JsValue, operator: &str) -> bool {
-    let equal = || match (lhs, rhs) {
+    let equal = |rhs: &JsValue| match (lhs, rhs) {
         (JsValue::String(lhs), JsValue::String(rhs)) => lhs == rhs,
         (JsValue::Number(lhs), JsValue::Number(rhs)) => lhs == rhs,
         (JsValue::Bool(lhs), JsValue::Bool(rhs)) => lhs == rhs,
@@ -90,14 +90,19 @@ pub(crate) fn matches_native_operand(lhs: &JsValue, rhs: &JsValue, operator: &st
         _ => false,
     };
     match operator {
-        "eq" => equal(),
-        "ne" => !equal(),
+        "eq" | "ne" => {
+            let matched = if rhs.is_null() {
+                matches!(lhs, JsValue::Null | JsValue::Undefined)
+            } else {
+                equal(rhs)
+            };
+            matched == (operator == "eq")
+        }
         "in" | "not_in" => rhs.as_array().is_some_and(|values| {
-            let found = values
-                .iter()
-                .any(|value| matches_native_operand(lhs, value, "eq"));
+            let found = values.iter().any(equal);
             if operator == "in" { found } else { !found }
         }),
+        "lt" | "lte" | "gt" | "gte" if matches!(rhs, JsValue::Null | JsValue::Undefined) => false,
         "lt" | "lte" | "gt" | "gte" => {
             let (Some(lhs), Some(rhs)) = (relational_primitive(lhs), relational_primitive(rhs))
             else {
@@ -186,7 +191,11 @@ fn matches_typed_filter(
         }
         _ => user.additional_js_fields()?.get(field).cloned(),
     };
-    let Some(lhs) = lhs else { return Ok(false) };
+    let lhs = match lhs {
+        Some(lhs) => lhs,
+        None if rhs.is_null() && matches!(operator, "eq" | "ne") => JsValue::Undefined,
+        None => return Ok(false),
+    };
     let rhs = if matches!(lhs, JsValue::Bool(_)) {
         match rhs {
             JsValue::String(value) => JsValue::Bool(value == "true"),

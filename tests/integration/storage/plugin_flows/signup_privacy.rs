@@ -250,7 +250,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
         if generic {
             assert_eq!(
                 *events.lock().unwrap(),
-                ["hash:different-password456", "existing", "synthetic"]
+                ["hash:different-password456", "synthetic", "existing"]
             );
             assert_eq!(body(&response)["token"], Value::Null);
             let synthetic = body(&response)["user"]["id"].as_str().unwrap().to_owned();
@@ -472,7 +472,7 @@ async fn synthetic_callback_failures_keep_public_error_boundary_and_principals<B
             assert!(response.body.is_empty());
         }
         assert!(!response.headers.contains_key("set-cookie"));
-        assert_eq!(*events.lock().unwrap(), ["hash", "existing", "synthetic"]);
+        assert_eq!(*events.lock().unwrap(), ["hash", "synthetic"]);
         assert_eq!(
             db.tables(&["user", "account", "session", "verification"])
                 .await?,

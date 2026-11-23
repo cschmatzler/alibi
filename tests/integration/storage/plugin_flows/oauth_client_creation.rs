@@ -101,7 +101,7 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
             json!({"redirect_uris":["http://app.fixture.test/callback"]}),
             cookies(&owner),
             400,
-            "VALIDATION_ERROR",
+            "invalid_redirect_uri",
         ),
         (
             json!({"redirect_uris":["\u{85}https://app.fixture.test/callback\u{85}"]}),

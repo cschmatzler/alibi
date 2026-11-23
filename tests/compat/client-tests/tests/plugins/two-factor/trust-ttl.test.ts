@@ -51,6 +51,18 @@ function cookieAttributes(cookie: Cookie, seconds: number) {
   expect(cookie.expires).toBe("Infinity");
 }
 
+// Since Better Auth 1.7.24 (b77e78341) a verification lookup sweeps unrelated
+// expired rows at most once a minute per instance, so an unrelated expired
+// control row may survive a lookup when cleanup is enabled. Cleanup-disabled
+// profiles must still retain it.
+function expectUnrelatedCleanup(profile: string, rows: unknown, baseline: unknown) {
+  if (profile.endsWith("cleanup-disabled")) {
+    expect(rows).toEqual(baseline);
+  } else {
+    expect([[], baseline]).toContainEqual(rows);
+  }
+}
+
 async function readRows(ctx: Context, identifier: string) {
   return rowsSchema.parse(await ctx.readVerificationState({ identifier }));
 }
@@ -280,7 +292,7 @@ for (const [profile, challengeAge, trustAge] of [
 
       const later = await owner.signIn.email({ email, password }, { headers: { cookie: pair } });
       const cleanup = await readRows(ctx, expiredIdentifier);
-      expect(cleanup).toEqual(profile.endsWith("cleanup-disabled") ? beforeExpired : []);
+      expectUnrelatedCleanup(profile, cleanup, beforeExpired);
 
       let rotation: unknown = null;
       let replay: unknown = null;
@@ -358,7 +370,6 @@ for (const [profile, challengeAge, trustAge] of [
         state,
         foreign,
         later,
-        cleanup: projectRows(cleanup),
         rotation,
         replay,
         expired,
@@ -690,9 +701,7 @@ for (const profile of [
       expect(changedOwner).toEqual(issued.rows.map((row) => ({ ...row, value: foreignId })));
 
       await rejected("changed-stored-owner", issued.cookie.value, true, changedOwner);
-      expect(await readRows(ctx, expiredIdentifier)).toEqual(
-        profile.endsWith("cleanup-disabled") ? expiredBaseline : [],
-      );
+      expectUnrelatedCleanup(profile, await readRows(ctx, expiredIdentifier), expiredBaseline);
 
       await mutateOwner(userId);
       const absent = ctx.uniqueToken("missing-issued-trust");
@@ -702,9 +711,7 @@ for (const profile of [
         true,
       );
       expect(await readRows(ctx, absent)).toEqual([]);
-      expect(await readRows(ctx, expiredIdentifier)).toEqual(
-        profile.endsWith("cleanup-disabled") ? expiredBaseline : [],
-      );
+      expectUnrelatedCleanup(profile, await readRows(ctx, expiredIdentifier), expiredBaseline);
 
       const second = await complete(missing);
       const expiryStartedAt = Date.now();

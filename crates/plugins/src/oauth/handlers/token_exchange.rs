@@ -74,6 +74,17 @@ pub(in crate::oauth) async fn refresh_tokens_via_provider(
         .json()
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
+    // A response without an access token is not a successful one, even with a
+    // 200 status (GitHub answers a refused refresh that way).
+    if token_data
+        .get("access_token")
+        .and_then(serde_json::Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        return Err(AuthError::internal(
+            "Token refresh response has no access token",
+        ));
+    }
 
     let mut tokens = parse_token_response(
         token_data,
@@ -123,11 +134,16 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
         .post(&provider.token_url)
         .header("Accept", "application/json");
     let mut request = request;
-    if grant_type == OAuthTokenGrant::AuthorizationCode
-        && let Some(policy) = &provider.authorization
-    {
+    if let Some(policy) = &provider.authorization {
+        let extra = if grant_type == OAuthTokenGrant::RefreshToken {
+            &policy.refresh_token_headers
+        } else {
+            &policy.authorization_code_headers
+        };
+        // Header names are case-insensitive: a later write, including client
+        // authentication below, replaces an earlier value in any casing.
         let mut headers = reqwest::header::HeaderMap::new();
-        for (name, value) in &policy.authorization_code_headers {
+        for (name, value) in extra {
             let name =
                 reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
                     AuthError::config(format!("Invalid code grant header: {error}"))
@@ -251,10 +267,21 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
                         .append_key_only(value)
                         .finish()
                 };
-                request.basic_auth(
+                let credentials = base64::engine::general_purpose::STANDARD.encode(format!(
+                    "{}:{}",
                     encode(&provider.client_id),
-                    Some(encode(&provider.client_secret)),
-                )
+                    encode(&provider.client_secret)
+                ));
+                let mut value =
+                    reqwest::header::HeaderValue::from_str(&format!("Basic {credentials}"))
+                        .map_err(|error| {
+                            AuthError::config(format!("Invalid client credentials: {error}"))
+                        })?;
+                value.set_sensitive(true);
+                // Replace, rather than append to, a configured Authorization header.
+                let mut headers = reqwest::header::HeaderMap::new();
+                _ = headers.insert(reqwest::header::AUTHORIZATION, value);
+                request.headers(headers)
             } else {
                 form.retain(|(key, _)| key != "client_id" && key != "client_secret");
                 form.extend([
@@ -713,6 +740,98 @@ mod tests {
                 );
             }
         }
+    }
+
+    // Upstream: packages/core/src/oauth2/refresh-access-token.test.ts (#12369).
+    #[tokio::test]
+    async fn refresh_rejects_a_successful_status_without_an_access_token() {
+        for body in [
+            r#"{"error":"bad_refresh_token","error_description":"The refresh token passed is incorrect or expired."}"#,
+            r#"{"access_token":""}"#,
+            r#"{"access_token":123}"#,
+        ] {
+            let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
+            let mut provider =
+                crate::oauth::providers::GenericOAuthConfig::new("client", "secret")
+                    .resolve()
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .provider;
+            provider.token_url = endpoint;
+            assert!(
+                refresh_tokens_via_provider(&provider, "spent-refresh-token", None)
+                    .await
+                    .is_err(),
+                "{body}"
+            );
+            server.await.unwrap();
+        }
+    }
+
+    // Upstream: refresh-access-token.test.ts and validate-authorization-code.test.ts (#12401, #12414).
+    #[tokio::test]
+    async fn token_requests_send_grant_headers_and_client_authentication_replaces_them() {
+        for grant in [
+            OAuthTokenGrant::AuthorizationCode,
+            OAuthTokenGrant::RefreshToken,
+        ] {
+            let mut config = crate::oauth::providers::GenericOAuthConfig::new("client", "secret");
+            config.token_url = Some("https://example.com/token".into());
+            config.authorization_url = Some("https://example.com/authorize".into());
+            config.authorization_headers = vec![
+                ("X-Provider-Header".into(), "configured".into()),
+                ("Authorization".into(), "Bearer caller".into()),
+                ("Accept".into(), "application/jwt".into()),
+            ];
+            let mut provider = config.resolve().await.unwrap().unwrap().provider;
+            let request = provider_token_request(&provider, &[("grant_type", "test")], grant)
+                .await
+                .unwrap()
+                .build()
+                .unwrap();
+            let headers = request.headers();
+            assert_eq!(headers["x-provider-header"], "configured", "{grant:?}");
+            assert_eq!(headers["accept"], "application/jwt", "{grant:?}");
+            assert_eq!(
+                headers.get_all("authorization").iter().count(),
+                1,
+                "{grant:?}"
+            );
+            assert_eq!(headers["authorization"], "Bearer caller", "{grant:?}");
+
+            provider.authorization.as_mut().unwrap().token_endpoint_auth =
+                Some(OAuthTokenEndpointAuth::ClientSecretBasic);
+            let request = provider_token_request(&provider, &[("grant_type", "test")], grant)
+                .await
+                .unwrap()
+                .build()
+                .unwrap();
+            let authorization: Vec<_> = request.headers().get_all("authorization").iter().collect();
+            assert_eq!(
+                authorization,
+                [&format!(
+                    "Basic {}",
+                    base64::engine::general_purpose::STANDARD.encode("client:secret")
+                )],
+                "{grant:?}"
+            );
+        }
+        let mut provider =
+            crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+        provider.token_url = "https://example.com/token".into();
+        let policy = provider.authorization.as_mut().unwrap();
+        policy.authorization_code_headers = vec![("x-code-only".into(), "code".into())];
+        let request = provider_token_request(
+            &provider,
+            &[("grant_type", "refresh_token")],
+            OAuthTokenGrant::RefreshToken,
+        )
+        .await
+        .unwrap()
+        .build()
+        .unwrap();
+        assert!(!request.headers().contains_key("x-code-only"));
     }
 
     #[tokio::test]

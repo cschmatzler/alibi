@@ -10,7 +10,7 @@ backend_tests!(
     account_endpoints_validate_selection_authentication_and_refresh,
     server_account_info_authenticates_query_and_fetches_provider_profile,
     automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto,
-    automatic_refresh_distinguishes_null_empty_response_and_persisted_tokens,
+    refresh_refusal_preserves_the_existing_grant,
     corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes
 );
 
@@ -277,148 +277,76 @@ async fn automatic_refresh_uses_access_expiry_without_refresh_lifetime_veto<B: B
     B::close(connection).await
 }
 
-async fn automatic_refresh_distinguishes_null_empty_response_and_persisted_tokens<B: Backend>(
-    db: Db,
-) -> TestResult {
+// Better Auth #12369 rejects a 200 response without a nonempty access token.
+async fn refresh_refusal_preserves_the_existing_grant<B: Backend>(db: Db) -> TestResult {
     use alibi::plugins::{OAuthPlugin, oauth::GenericOAuthConfig};
     use alibi::{AuthAccount as _, CreateAccount};
-    async fn seed<S: AuthSchema>(auth: &Alibi<S>, user: &str) -> alibi::AuthResult<String> {
-        let account = auth
-            .context()
-            .database
-            .create_account(CreateAccount {
-                additional_fields: Default::default(),
-                user_id: user.into(),
-                account_id: "account-subject".into(),
-                provider_id: "generic".into(),
-                access_token: Some("old-access".into()),
-                refresh_token: Some("old-refresh".into()),
-                id_token: Some("old-id".into()),
-                access_token_expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
-                refresh_token_expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
-                scope: Some("calendar,drive".into()),
-                password: None,
-            })
-            .await?;
-        Ok(account.id().to_string())
-    }
 
-    for endpoint in ["/get-access-token", "/account-info"] {
-        for token in [Value::Null, json!("")] {
-            let db = db.fresh().await?;
-            let (connection, _) = db.migrated::<B>(SECRET).await?;
-            let remote = Provider::start("application/json", "{}").await;
-            remote.respond_at("/token",200,json!({"access_token":token,"refresh_token":"","id_token":"","expires_in":0,"refresh_token_expires_in":0}));
-            remote.respond_at("/profile",200,json!({"id":"account-subject","email":"profile@example.test","name":"Profile","email_verified":true}));
-            let mut config = GenericOAuthConfig::new("native-client", "native-secret");
-            config.authorization_url = Some(remote.url.join("authorize")?.into());
-            config.token_url = Some(remote.url.join("token")?.into());
-            config.user_info_url = Some(remote.url.join("profile")?.into());
-            let auth = super::auth_probe::fast_builder::<B>(&connection)
-                .plugin(
-                    OAuthPlugin::new()
-                        .add_provider("generic", config.resolve().await?.unwrap().provider),
-                )
-                .build()
-                .await?;
-            let owner = signup(&auth, "refresh-boundary@example.test").await;
-            let id = seed(&auth, body(&owner)["user"]["id"].as_str().unwrap()).await?;
-            let protected = db.tables(&["user", "session"]).await?;
-            let old_refresh_expiry = db
-                .text(
-                    "SELECT \"refreshTokenExpiresAt\" FROM \"account\" WHERE id=$1",
-                    &[&id],
-                )
-                .await?;
-            let input = if endpoint == "/get-access-token" {
-                request(endpoint, Some(json!({"accountId":id})), &cookies(&owner))
-            } else {
-                let mut input = request(endpoint, None, &cookies(&owner));
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let remote = Provider::start("application/json", "{}").await;
+    let mut config = GenericOAuthConfig::new("native-client", "native-secret");
+    config.authorization_url = Some(remote.url.join("authorize")?.into());
+    config.token_url = Some(remote.url.join("token")?.into());
+    config.user_info_url = Some(remote.url.join("profile")?.into());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(
+            OAuthPlugin::new()
+                .add_provider("generic", config.resolve().await?.unwrap().provider),
+        )
+        .build()
+        .await?;
+    let owner = signup(&auth, "refresh-boundary@example.test").await;
+    let cookie = cookies(&owner);
+    let account = auth
+        .context()
+        .database
+        .create_account(CreateAccount {
+            additional_fields: Default::default(),
+            user_id: body(&owner)["user"]["id"].as_str().unwrap().into(),
+            account_id: "account-subject".into(),
+            provider_id: "generic".into(),
+            access_token: Some("old-access".into()),
+            refresh_token: Some("old-refresh".into()),
+            id_token: Some("old-id".into()),
+            access_token_expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+            refresh_token_expires_at: Some(chrono::Utc::now() - chrono::Duration::hours(1)),
+            scope: Some("calendar,drive".into()),
+            password: None,
+        })
+        .await?;
+    let id = account.id().to_string();
+    let tables = ["user", "session", "account"];
+    let protected = db.tables(&tables).await?;
+
+    for refused in [
+        json!({"error":"bad_refresh_token","error_description":"The refresh token passed is incorrect or expired."}),
+        json!({"access_token":null,"refresh_token":"new-refresh","id_token":"new-id"}),
+        json!({"access_token":"","refresh_token":"new-refresh","id_token":"new-id"}),
+    ] {
+        remote.respond_at("/token", 200, refused);
+        for (endpoint, code) in [
+            ("/get-access-token", "FAILED_TO_GET_ACCESS_TOKEN"),
+            ("/refresh-token", "FAILED_TO_REFRESH_ACCESS_TOKEN"),
+            ("/account-info", "FAILED_TO_GET_ACCESS_TOKEN"),
+        ] {
+            let input = if endpoint == "/account-info" {
+                let mut input = request(endpoint, None, &cookie);
                 input.set_query_pairs([("accountId", id.as_str())]);
                 input
-            };
-            let response = call(
-                &auth,
-                input,
-                if endpoint == "/account-info" && token == json!("") {
-                    400
-                } else {
-                    200
-                },
-            )
-            .await;
-            if endpoint == "/get-access-token" {
-                assert_eq!(
-                    body(&response)["accessToken"],
-                    if token.is_null() {
-                        json!("old-access")
-                    } else {
-                        token.clone()
-                    }
-                );
-                assert_eq!(body(&response)["idToken"], "");
-            } else if token.is_null() {
-                assert_eq!(body(&response)["user"]["email"], "profile@example.test");
             } else {
-                assert_eq!(body(&response)["code"], "ACCESS_TOKEN_NOT_FOUND");
-            }
-            assert_eq!(
-                db.text(
-                    "SELECT \"accessToken\" FROM \"account\" WHERE id=$1",
-                    &[&id]
-                )
-                .await?,
-                token.as_str().map(str::to_owned)
-            );
-            assert_eq!(
-                db.text(
-                    "SELECT \"refreshToken\" FROM \"account\" WHERE id=$1",
-                    &[&id]
-                )
-                .await?
-                .as_deref(),
-                Some("old-refresh")
-            );
-            assert_eq!(
-                db.text("SELECT \"idToken\" FROM \"account\" WHERE id=$1", &[&id])
-                    .await?
-                    .as_deref(),
-                Some("old-id")
-            );
-            assert_eq!(
-                db.text(
-                    "SELECT \"refreshTokenExpiresAt\" FROM \"account\" WHERE id=$1",
-                    &[&id]
-                )
-                .await?,
-                old_refresh_expiry
-            );
-            assert_eq!(
-                db.text("SELECT \"scope\" FROM \"account\" WHERE id=$1", &[&id])
-                    .await?
-                    .as_deref(),
-                Some("calendar,drive")
-            );
-            assert_eq!(db.tables(&["user", "session"]).await?, protected);
+                request(endpoint, Some(json!({"accountId":id})), &cookie)
+            };
+            let response = call(&auth, input, 400).await;
+            assert_eq!(body(&response)["code"], code);
+            assert_eq!(db.tables(&tables).await?, protected);
             let exchanges = remote.take();
-            assert_eq!(
-                exchanges
-                    .iter()
-                    .filter(|exchange| exchange.path == "/token")
-                    .count(),
-                1
-            );
-            assert_eq!(
-                exchanges
-                    .iter()
-                    .filter(|exchange| exchange.path == "/profile")
-                    .count(),
-                usize::from(endpoint == "/account-info" && token.is_null())
-            );
-            B::close(connection).await?;
+            assert_eq!(exchanges.len(), 1, "{endpoint}");
+            assert_eq!(exchanges[0].path, "/token");
+            assert!(url::form_urlencoded::parse(&exchanges[0].body)
+                .any(|(key, value)| key == "refresh_token" && value == "old-refresh"));
         }
     }
-    Ok(())
+    B::close(connection).await
 }
 
 async fn corrupt_imported_oauth_ciphertexts_reject_before_transport_or_writes<B: Backend>(

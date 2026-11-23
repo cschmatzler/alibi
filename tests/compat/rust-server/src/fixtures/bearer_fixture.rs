@@ -35,14 +35,14 @@ impl alibi::AuthPlugin<TestSchema> for ApplicationExposure {
     }
     async fn after_request(
         &self,
-        _: &alibi::AuthRequest,
+        request: &alibi::AuthRequest,
         _: &alibi::AuthContext<TestSchema>,
-        mut response: alibi::AuthResponse,
+        response: alibi::AuthResponse,
     ) -> AuthResult<alibi::AuthResponse> {
-        drop(response.headers.insert(
+        request.queue_response_header(
             "access-control-expose-headers",
             "X-First, X-First, X-Second",
-        ));
+        );
         Ok(response)
     }
 }

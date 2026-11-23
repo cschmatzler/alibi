@@ -40,19 +40,46 @@ where
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
         let transaction = self.scoped_connection().begin_immediate().await?;
+        let created = self
+            .insert_wallet_address(&transaction, &self.db, data)
+            .await?;
+        transaction.commit().await.map_err(map_db_err)?;
+        Ok(created)
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema + Send + Sync,
+    S::User: SeaOrmUserModel,
+{
+    /// Validate the owner under a shared lock and insert the wallet on
+    /// `connection`. `ids` generates the row ID, so a caller's transaction can
+    /// supply its own connection instead of waiting for a second one.
+    pub(super) async fn insert_wallet_address<C, I>(
+        &self,
+        connection: &C,
+        ids: &I,
+        data: CreateWalletAddress,
+    ) -> AuthResult<WalletAddress>
+    where
+        C: sea_orm::ConnectionTrait,
+        I: sea_orm::ConnectionTrait,
+    {
+        if !data.chain_id.is_finite() {
+            return Err(AuthError::bad_request("Wallet chain ID must be finite"));
+        }
         let owner_id = S::User::parse_id(&data.user_id)?;
-        let owner = super::users::user_query::<S::User>(
-            sea_orm::ConnectionTrait::get_database_backend(&transaction),
-        )
-        .filter(S::User::id_column().eq(owner_id))
-        .lock_shared()
-        .one(&transaction)
-        .await
-        .map_err(map_db_err)?
-        .ok_or(AuthError::UserNotFound)?;
+        let owner = super::users::user_query::<S::User>(connection.get_database_backend())
+            .filter(S::User::id_column().eq(owner_id))
+            .lock_shared()
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .ok_or(AuthError::UserNotFound)?;
         let created = wallet_address::ActiveModel {
             id: Set(self
-                .generated_id(&self.db, "walletAddress", "walletAddress", "id")
+                .generated_id(ids, "walletAddress", "walletAddress", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
             user_id: Set(owner.id().into_owned()),
@@ -61,10 +88,9 @@ where
             is_primary: Set(data.is_primary),
             created_at: Set(Utc::now()),
         }
-        .insert(&transaction)
+        .insert(connection)
         .await
         .map_err(map_db_err)?;
-        transaction.commit().await.map_err(map_db_err)?;
         Ok(created.into())
     }
 }

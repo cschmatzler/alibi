@@ -93,13 +93,46 @@ impl OAuthProviderPlugin {
                 token: token.into(),
             })
         }) else {
-            return error(401, "invalid_request", "access token not found");
+            // RFC 6750 §3.1: a request without credentials gets no error code.
+            let algorithms = self.dpop_algorithms().join(" ");
+            return error(401, "invalid_request", "access token not found").map(|response| {
+                super::clients::with_challenge(
+                    response,
+                    &format!("Bearer, DPoP algs=\"{algorithms}\""),
+                )
+            });
         };
+        let uses_dpop_scheme = authorization.scheme == "DPoP";
         let validation = match self
-            .require_active_access_token_with_claims(ctx, &authorization.token, None)
+            .require_active_access_token_with_claims(
+                ctx, &authorization.token, None, req.physical_request(),
+            )
             .await
         {
             Ok(payload) => payload,
+            Err(failure) if failure.error.status_code() == 401 => {
+                let body = failure.body.as_deref();
+                let field = |name: &str| {
+                    body.and_then(|body| body.get(name))
+                        .and_then(JsValue::as_str)
+                        .map(str::to_owned)
+                };
+                let code = field("error").unwrap_or_else(|| "invalid_token".into());
+                let description = field("error_description").unwrap_or_default();
+                if uses_dpop_scheme {
+                    return self.dpop_unauthorized(&code, &description);
+                }
+                let challenge = failure
+                    .headers
+                    .as_ref()
+                    .and_then(|headers| headers.get("WWW-Authenticate"))
+                    .map_or_else(
+                        || "Bearer error=\"invalid_token\"".to_owned(),
+                        |value| value.to_string(),
+                    );
+                return error(401, &code, &description)
+                    .map(|response| super::clients::with_challenge(response, &challenge));
+            }
             Err(error) => {
                 let mut response = EndpointResponse::error(error.error);
                 if let Some(body) = error.body {
@@ -119,8 +152,7 @@ impl OAuthProviderPlugin {
             .is_some()
             && req.physical_request().is_none()
         {
-            return error(
-                401,
+            return self.dpop_unauthorized(
                 "invalid_token",
                 "DPoP-bound access token requires an HTTP request context",
             );
@@ -143,9 +175,10 @@ impl OAuthProviderPlugin {
         binding.proof_max_age_seconds = self.config.dpop_proof_max_age_seconds;
         binding.signing_algorithms = self.config.dpop_signing_algorithms.clone();
         if let Err(failure) = crate::oauth2::enforce_dpop_binding(&binding).await {
+            // Every binding failure means the token is DPoP-bound or the
+            // request used the DPoP scheme, so it is challenged with DPoP.
             if crate::oauth2::is_dpop_binding_error(&failure) {
-                return error(
-                    401,
+                return self.dpop_unauthorized(
                     failure.code.as_deref().unwrap_or_default(),
                     &failure.message,
                 );
@@ -259,6 +292,51 @@ impl OAuthProviderPlugin {
         _ = claims.insert("sub".into(), json!(subject));
         Ok(no_store(EndpointResponse::json(&claims)?))
     }
+}
+impl OAuthProviderPlugin {
+    fn dpop_algorithms(&self) -> Vec<String> {
+        self.config
+            .dpop_signing_algorithms
+            .clone()
+            .unwrap_or_else(|| crate::oauth2::DPOP_SIGNING_ALGORITHMS.map(str::to_owned).into())
+    }
+    /// A 401 with an RFC 9449 §7.1 `DPoP` challenge listing the accepted algorithms.
+    fn dpop_unauthorized(&self, code: &str, description: &str) -> AuthResult<EndpointResponse> {
+        let challenge = dpop_challenge(code, description, &self.dpop_algorithms());
+        error(401, code, description)
+            .map(|response| super::clients::with_challenge(response, &challenge))
+    }
+}
+/// Fit a runtime message into RFC 6750 §3's `error_description` character set:
+/// `"` becomes `'`, other excluded characters become spaces, and an empty
+/// result is omitted.
+fn challenge_description(description: &str) -> Option<String> {
+    let replaced = description
+        .chars()
+        .map(|c| match c {
+            '"' => '\'',
+            '\x20' | '\x21' | '\x23'..='\x5b' | '\x5d'..='\x7e' => c,
+            _ => ' ',
+        })
+        .collect::<String>();
+    let collapsed = replaced
+        .split(' ')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!collapsed.is_empty()).then_some(collapsed)
+}
+fn quote_auth_param(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+/// An RFC 9449 §7.1 `WWW-Authenticate: DPoP` challenge value.
+fn dpop_challenge(code: &str, description: &str, algorithms: &[String]) -> String {
+    let mut params = vec![format!("DPoP error=\"{}\"", quote_auth_param(code))];
+    if let Some(description) = challenge_description(description) {
+        params.push(format!("error_description=\"{description}\""));
+    }
+    params.push(format!("algs=\"{}\"", quote_auth_param(&algorithms.join(" "))));
+    params.join(", ")
 }
 fn no_store(response: EndpointResponse) -> EndpointResponse {
     response

@@ -62,7 +62,7 @@ async fn check<S: AuthSchema>(db: &Db, auth: &Alibi<S>) -> TestResult {
     let fixture: Value = serde_json::from_str(include_str!(
         "../../fixtures/postgres-user-jsonb-signup.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {

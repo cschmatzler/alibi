@@ -263,9 +263,9 @@ pub(crate) async fn delete_user_core(
         }
     }
     if let Some(token) = body.token.as_deref().filter(|value| !value.is_empty()) {
-        // Source invokes the callback as a nested endpoint here, then drops
-        // that endpoint's response headers while preserving its writes/errors.
-        return delete_user_callback_core(token, user, request, false, config, ctx).await;
+        // The token consumption runs on the caller's context, so the expired
+        // session cookies reach its response.
+        return delete_user_callback_core(token, user, request, config, ctx).await;
     }
     if config
         .delete_user
@@ -347,7 +347,7 @@ pub(crate) async fn delete_user_core(
             "Session expired. Re-authenticate to perform this action.",
         ));
     }
-    perform_user_deletion(user, request, true, config, ctx).await?;
+    perform_user_deletion(user, request, config, ctx).await?;
     Ok(SuccessMessageResponse {
         success: true,
         message: "User deleted".into(),
@@ -358,7 +358,6 @@ pub(crate) async fn delete_user_callback_core(
     token: &str,
     user: &impl AuthUser,
     request: &impl alibi_core::session::SessionRequest,
-    clear_cookie_errors: bool,
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
@@ -368,7 +367,7 @@ pub(crate) async fn delete_user_callback_core(
         .await?
         .filter(|verification| verification.value().is_ok_and(|value| value == user.id()))
         .ok_or_else(|| AuthError::not_found("Invalid token"))?;
-    perform_user_deletion(user, request, clear_cookie_errors, config, ctx).await?;
+    perform_user_deletion(user, request, config, ctx).await?;
     Ok(SuccessMessageResponse {
         success: true,
         message: "User deleted".into(),
@@ -378,7 +377,6 @@ pub(crate) async fn delete_user_callback_core(
 async fn perform_user_deletion(
     user: &impl AuthUser,
     request: &impl alibi_core::session::SessionRequest,
-    clear_cookie_errors: bool,
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
@@ -394,12 +392,10 @@ async fn perform_user_deletion(
     if let Some(hook) = &config.delete_user.after_delete
         && let Err(error) = hook.after_delete(&snapshot).await
     {
-        if clear_cookie_errors {
-            for cookie in
-                alibi_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)?
-            {
-                request.queue_response_header("Set-Cookie", cookie);
-            }
+        for cookie in
+            alibi_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)?
+        {
+            request.queue_response_header("Set-Cookie", cookie);
         }
         return Err(error);
     }

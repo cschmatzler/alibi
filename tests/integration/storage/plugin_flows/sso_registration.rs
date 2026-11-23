@@ -149,7 +149,7 @@ async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<
     let mut public = input.clone();
     public["providerId"] = json!("public-ip-endpoints");
     for field in fields {
-        public["oidcConfig"][field] = json!(format!("https://[64:ff9b:2::1]/{field}"));
+        public["oidcConfig"][field] = json!(format!("https://[64:ff9b::808:808]/{field}"));
     }
     let admitted = Box::pin(auth.dispatch_endpoint(
         alibi::plugins::SsoPlugin::register_sso_provider_endpoint(&public)?,

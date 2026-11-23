@@ -109,10 +109,16 @@ impl OAuthProviderPlugin {
             );
         }
         let identifier = Box::pin(self.hash_token(code, "authorization_code")).await?;
-        let Some(proof) = Box::pin(ctx.verifications().consume(&identifier)).await? else {
-            Box::pin(ctx.database.delete_oauth_tokens_for_code(&identifier)).await?;
-            return error(400, "invalid_grant", "invalid code");
+        // Read without consuming: the code is claimed only after every request
+        // check passes, so a rejected verifier, binding or DPoP proof leaves it
+        // for a retry.
+        let Some(proof) = Box::pin(ctx.verifications().find(&identifier))
+            .await?
+            .filter(|proof| !proof.is_expired())
+        else {
+            return reject_code(ctx, &identifier).await;
         };
+        let verification_id = proof.id().map(str::to_owned);
         let Ok(value) = serde_json::from_str::<Value>(proof.value()?) else {
             return error(400, "invalid_grant", "malformed verification value");
         };
@@ -249,7 +255,7 @@ impl OAuthProviderPlugin {
         );
 
         params.session_id = Some(session_id.into());
-        params.authorization_code_id = Some(identifier);
+        params.authorization_code_id = Some(identifier.clone());
         params.auth_time = value
             .get("authTime")
             .and_then(Value::as_i64)
@@ -271,6 +277,44 @@ impl OAuthProviderPlugin {
                     })
                     .or_else(|| v.as_str().map(|v| vec![v.into()]))
             });
+        // Check the DPoP proof under the resource policy issuance applies,
+        // before the code is consumed. Its `jti` is recorded only after the
+        // claim, so the loser of a concurrent redemption sees a spent code.
+        let deferred = super::dpop::DeferredReplay::default();
+        let resource_value = json!(params.resources);
+        let checked = match Box::pin(self.admit_resources(
+            ctx,
+            &params.client.client_id,
+            &params.scopes,
+            Some(&resource_value),
+        ))
+        .await
+        {
+            Ok(admission) => {
+                Box::pin(self.resolve_dpop_binding_with(
+                    ctx,
+                    req,
+                    &params,
+                    &admission,
+                    Some(&deferred),
+                ))
+                .await
+            }
+            Err(error) => Err(error),
+        };
+        params.confirmation = match checked {
+            Ok(confirmation) => confirmation,
+            Err(error) => return super::issuance::error_response(error),
+        };
+        // Atomic single-use redemption (RFC 6749 §4.1.2). Lookup and consume
+        // each take the newest row, so issue only when they are the same row.
+        let consumed = Box::pin(ctx.verifications().consume(&identifier)).await?;
+        if consumed.is_none_or(|consumed| consumed.id().map(str::to_owned) != verification_id) {
+            return reject_code(ctx, &identifier).await;
+        }
+        if let Err(error) = deferred.record(ctx).await {
+            return super::issuance::error_response(error);
+        }
         let response =
             match Box::pin(self.mint_tokens(ctx, req, &params, "authorization_code")).await {
                 Ok(value) => value,
@@ -280,6 +324,15 @@ impl OAuthProviderPlugin {
             .with_header("Cache-Control", "no-store")
             .with_header("Pragma", "no-cache"))
     }
+}
+/// Reject an unknown, expired or redeemed code. A code presented after
+/// redemption revokes the tokens it issued (RFC 6749 §4.1.2).
+async fn reject_code<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    identifier: &str,
+) -> AuthResult<EndpointResponse> {
+    Box::pin(ctx.database.delete_oauth_tokens_for_code(identifier)).await?;
+    error(400, "invalid_grant", "invalid code")
 }
 fn error(status: u16, code: &str, description: &str) -> AuthResult<EndpointResponse> {
     super::clients::status_protocol_error(status, code, description).map(|r| {

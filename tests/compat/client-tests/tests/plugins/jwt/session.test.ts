@@ -253,7 +253,8 @@ compatScenario(
         throw new Error("Direct get-session must return a session and its JWT response header");
       }
 
-      expect(receipt.exposed).toBe("existing, set-auth-jwt, Existing");
+      // Better Auth #12603 merges exposed header names case-insensitively.
+      expect(receipt.exposed).toBe("existing, set-auth-jwt");
 
       const header = await verifyWithOfficialJose(
         receipt.token,
@@ -304,27 +305,15 @@ compatScenario(
       });
       expect(expired.error).toBeNull();
       expect(expired.data).toBeNull();
-      expect(receipt.exposed).toBe("existing, set-auth-jwt, Existing");
+      expect(receipt.exposed).toBe("existing, set-auth-jwt");
       expect(receipt.cookies.map((cookie) => cookie.split("=")[0])).toEqual([
         "better-auth.session_token",
         "better-auth.session_data",
         "better-auth.dont_remember",
       ]);
 
-      if (!receipt.token) {
-        throw new Error(
-          "The pinned completed-session hook retains the snapshot through expiry cleanup",
-        );
-      }
-
-      const expiredHeader = await verifyWithOfficialJose(
-        receipt.token,
-        jwks.data.keys,
-        ctx.baseURL,
-        ctx.baseURL,
-      );
-      expect(sessionSnapshot.parse(expiredHeader.payload.snapshot)).toEqual(expiredBefore);
-      expect(expiredHeader.payload.sub).toBe(issued.user.id);
+      // Better Auth #12459 clears hook session authority on an expired lookup.
+      expect(receipt.token).toBeNull();
 
       const expiredAfter = await persisted(ctx, profile, issued.token);
       expect(expiredAfter).toEqual(profile === "jwt-session-deferred" ? expiredBefore : null);
@@ -347,7 +336,6 @@ compatScenario(
         after,
         expiredBefore,
         expired: ctx.snapshot(expired),
-        expiredHeader,
         expiredAfter,
         rejected: ctx.snapshot(rejected),
         rejectedAfter,

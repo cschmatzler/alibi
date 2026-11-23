@@ -26,7 +26,7 @@ async fn mysql_mapped_factor_storage_matches_actual_http() -> TestResult {
     }
     let fixture: Value =
         serde_json::from_str(include_str!("../../../fixtures/mysql-mapped-factor.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let mut config = AuthConfig::new("mysql-mapped-factor-secret-at-least-32-characters")
         .base_url("http://localhost");
     config.advanced.database.two_factor = Some(alibi::config::TwoFactorDatabaseConfig {

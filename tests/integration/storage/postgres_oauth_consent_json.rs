@@ -21,7 +21,7 @@ async fn oauth_consent_native_json_bindings_match_actual_postgres<B: Backend>(
     let fixture: Value = serde_json::from_str(include_str!(
         "../../fixtures/postgres-oauth-consent-json.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 5);
     let owner = store

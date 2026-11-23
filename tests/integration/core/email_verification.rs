@@ -89,6 +89,7 @@ async fn auth<B: Backend>(
     });
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(
             EmailPasswordPlugin::new()
                 .enable_username(false)
@@ -338,9 +339,10 @@ mod tests {
         Ok(())
     }
 
-    // An awaited default failure rolls back uncommitted signup writes. Opt-in logging
-    // completes signup and retains its proof. Both policies retain committed users
-    // after sign-in notification errors and report direct delivery failure.
+    // Sign-up sends its verification email after the user is saved, so a
+    // delivery failure is logged and keeps the committed signup under either
+    // policy (upstream #12052). Both policies retain committed users after
+    // sign-in notification errors and report direct delivery failure.
     async fn notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors<
         B: Backend,
     >(
@@ -352,57 +354,9 @@ mod tests {
         ] {
             let (auth, sender, _db) = auth::<B>(db.fresh().await?, true, None, true, policy).await;
             let (registered, signup_body) = post(&auth, "/sign-up/email", signup()).await;
-            if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
-                assert_eq!(registered.status, 400, "{signup_body}");
-                assert_eq!(
-                    signup_body.get("message"),
-                    Some(&json!("fixture delivery failed"))
-                );
-            } else {
-                assert_eq!(registered.status, 200, "{signup_body}");
-                assert_eq!(signup_body.get("token"), Some(&Value::Null));
-            }
-            if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
-                assert!(
-                    auth.store()
-                        .get_user_by_email(&alibi::utils::json::JsString::from(EMAIL))
-                        .await
-                        .unwrap()
-                        .is_none()
-                );
-                let delivered_user = sender.calls.lock().unwrap().first().unwrap().0.id.clone();
-                assert!(
-                    auth.store()
-                        .get_user_by_id(&delivered_user)
-                        .await
-                        .unwrap()
-                        .is_none()
-                );
-                assert!(
-                    auth.store()
-                        .get_user_accounts(&delivered_user)
-                        .await
-                        .unwrap()
-                        .is_empty()
-                );
-                assert!(
-                    auth.store()
-                        .get_user_sessions(&delivered_user)
-                        .await
-                        .unwrap()
-                        .is_empty()
-                );
-                assert_eq!(sender.calls.lock().unwrap().len(), 1);
-                sender.fail.store(false, Ordering::SeqCst);
-                let (retry, retry_body) = post(&auth, "/sign-up/email", signup()).await;
-                assert_eq!(retry.status, 200, "{retry_body}");
-                sender.fail.store(true, Ordering::SeqCst);
-            }
-            let signup_deliveries = if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
-                2
-            } else {
-                1
-            };
+            assert_eq!(registered.status, 200, "{signup_body}");
+            assert_eq!(signup_body.get("token"), Some(&Value::Null));
+            let signup_deliveries = 1;
             let user = auth
                 .store()
                 .get_user_by_email(&alibi::utils::json::JsString::from(EMAIL))

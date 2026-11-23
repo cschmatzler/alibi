@@ -39,7 +39,7 @@ async fn mysql_declared_user_writes_match_actual_readback() -> TestResult {
     let fixture = native::parse_value(include_str!(
         "../../fixtures/mysql-user-write-readback.json"
     ))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 2);
     let date: chrono::DateTime<chrono::Utc> = "2026-01-01T00:00:00.123Z".parse()?;

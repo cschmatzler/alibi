@@ -3,12 +3,14 @@ import { createHash } from "node:crypto";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
+import { createTracingFetch, type TraceEntry } from "../../../support/trace";
+
 compatScenario(
   "The exported assertion consumer checks claims and namespaces durable replay identifiers",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: object) =>
-      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+    const control = (input: object, fetchControl = actor.fetch) =>
+      fetchControl(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "assertion-helper", ...input }),
@@ -92,13 +94,18 @@ compatScenario(
       error_description: "client assertion jti has already been used",
     });
     const contested = { aud: audience, exp: now + 90, iat: now, jti: "contested" };
+    const raceTraces: TraceEntry[] = [];
+    const raceFetch = createTracingFetch(ctx.baseURL, "assertion-race", raceTraces);
     const race = await Promise.all(
       ["assertion-helper", "assertion-helper-peer"].map((mode) =>
-        control({
-          mode,
-          action: "consume-assertion",
-          params: { namespace: "extension:race", payload: contested, expectedAudience: audience },
-        }),
+        control(
+          {
+            mode,
+            action: "consume-assertion",
+            params: { namespace: "extension:race", payload: contested, expectedAudience: audience },
+          },
+          raceFetch,
+        ),
       ),
     );
     expect(race.map((response) => response.status).sort()).toEqual([200, 400]);
@@ -112,6 +119,8 @@ compatScenario(
             },
       );
     }
+    // Either fixture instance can claim the row. Compare both traces in outcome order.
+    ctx.recordTransport(raceTraces.sort((a, b) => a.responseStatus - b.responseStatus));
     const raceId = createHash("sha256")
       .update("extension:race:contested")
       .digest()

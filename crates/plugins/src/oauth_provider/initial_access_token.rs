@@ -88,7 +88,8 @@ impl super::OAuthProviderPlugin {
                 "invalid_token",
                 "Invalid initial access token",
             )?
-            .with_header("WWW-Authenticate", "Bearer error=\"invalid_token\""),
+            .with_header("WWW-Authenticate", "Bearer error=\"invalid_token\"")
+            .with_header("Access-Control-Expose-Headers", "WWW-Authenticate"),
             Err(OAuthInitialAccessTokenError::Application(_)) => {
                 super::clients::status_protocol_error(
                     500,

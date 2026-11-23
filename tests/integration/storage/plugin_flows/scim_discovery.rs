@@ -14,6 +14,42 @@ postgres_tests!(
     scim_startup_requires_an_authentication_source,
     scim_discovery_sdk_headers_preserve_logical_response_marker
 );
+#[tokio::test]
+async fn scim_without_native_transactions_keeps_server_catalog_reads_available() -> TestResult {
+    use alibi::plugins::{ScimPlugin, scim::ScimManagedConnectionOptions};
+
+    let auth = AuthBuilder::without_database(AuthConfig::new(SECRET).base_url(ORIGIN))
+        .plugin(ScimPlugin::new().managed_connections(ScimManagedConnectionOptions::new(
+            "native-scim-catalog-credential-hash-secret-32",
+        )))
+        .build()
+        .await?;
+    let response = call(&auth, request("/scim/v2/ServiceProviderConfig", None, ""), 501).await;
+    let detail = "The scim plugin requires a database adapter with native transaction support.";
+    assert_eq!(response.headers.get("content-type").unwrap(), "application/scim+json");
+    assert_eq!(body(&response), json!({
+        "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+        "status": "501",
+        "detail": detail,
+    }));
+    let error = auth.dispatch_endpoint(
+        ScimPlugin::service_provider_config_endpoint(), EndpointOptions::default(),
+    ).await.unwrap_err();
+    assert_eq!(error.error.status_code(), 501);
+    let error = auth.dispatch_endpoint(
+        ScimPlugin::decommission_connection_endpoint("workforce", Some("tenant-a"))?,
+        EndpointOptions::default(),
+    ).await.unwrap_err();
+    assert!(matches!(error.error, alibi::AuthError::Api { status:501, code:Some(code), .. }
+        if code == "SCIM_REQUIRES_NATIVE_TRANSACTIONS"));
+    let catalog = auth.dispatch_endpoint(
+        ScimPlugin::list_managed_connections_endpoint("tenant-a")?,
+        EndpointOptions::default(),
+    ).await?.decode()?;
+    assert_eq!(catalog, json!({"connections":[]}));
+    Ok(())
+}
+
 async fn scim_startup_requires_an_authentication_source<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let result = builder::<B>(&connection)

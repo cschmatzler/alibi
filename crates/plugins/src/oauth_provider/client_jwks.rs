@@ -1,9 +1,11 @@
 //! Bounded remote client metadata transport and provider-scoped public-key caching.
 use alibi_core::store::OAuthClient;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, Headers};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, Headers};
 use async_trait::async_trait;
+use futures_util::future::{BoxFuture, FutureExt, Shared};
 use indexmap::IndexMap;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::watch;
@@ -55,34 +57,116 @@ pub trait OAuthClientMetadataResourceFetch: Send + Sync + std::fmt::Debug {
 
 const FETCH_ERROR: &str = "failed to fetch client JWKS";
 const MAX_BYTES: usize = 64 * 1024;
+const FRESH_MS: i64 = 300_000;
+const DEFAULT_STALE_MS: i64 = 600_000;
+
 #[derive(Clone, Debug)]
 struct Entry {
     jwks: Value,
     fetched_at: i64,
+    sequence: u64,
+    failure: Option<(i64, FetchFailure)>,
+}
+#[derive(Clone, Copy, Debug)]
+enum FetchFailure {
+    Invalid,
+    Rejected,
+    Transient,
+    Transport,
+    Capacity,
+}
+type FetchResult = Result<Value, FetchFailure>;
+type PendingFetch = Shared<BoxFuture<'static, FetchResult>>;
+
+#[derive(Debug, Default)]
+struct CacheState {
+    entries: IndexMap<String, Entry>,
+    pending: HashMap<String, (u64, i64, PendingFetch)>,
+    sequence: u64,
 }
 #[derive(Debug, Default)]
-pub(super) struct Cache {
-    entries: Mutex<IndexMap<String, Entry>>,
-}
+pub(super) struct Cache(Mutex<CacheState>);
 impl Cache {
-    fn get(&self, key: &str) -> AuthResult<Option<Entry>> {
-        Ok(self
-            .entries
-            .lock()
-            .map_err(|_| AuthError::internal("JWKS cache unavailable"))?
-            .get(key)
-            .cloned())
+    fn state(&self) -> AuthResult<std::sync::MutexGuard<'_, CacheState>> {
+        self.0.lock().map_err(|_| AuthError::internal("JWKS cache unavailable"))
     }
-    fn set(&self, key: String, jwks: Value, fetched_at: i64) -> AuthResult<()> {
-        let mut entries = self
-            .entries
-            .lock()
-            .map_err(|_| AuthError::internal("JWKS cache unavailable"))?;
-        _ = entries.insert(key, Entry { jwks, fetched_at });
-        if entries.len() > 500 {
-            _ = entries.shift_remove_index(0);
+
+    pub(super) fn sequence(&self) -> AuthResult<u64> {
+        Ok(self.state()?.sequence)
+    }
+
+    fn get(&self, key: &str) -> AuthResult<Option<Entry>> {
+        let mut state = self.state()?;
+        let Some((key, entry)) = state.entries.shift_remove_entry(key) else {
+            return Ok(None);
+        };
+        _ = state.entries.insert(key, entry.clone());
+        Ok(Some(entry))
+    }
+
+    async fn load(
+        &self,
+        key: &str,
+        uri: &str,
+        fetcher: Option<Arc<dyn OAuthClientMetadataResourceFetch>>,
+        min_sequence: u64,
+    ) -> AuthResult<FetchResult> {
+        let mut retry = false;
+        loop {
+            let (sequence, started, pending, joined) = {
+                let mut state = self.state()?;
+                if let Some((sequence, started, fetch)) = state.pending.get(key)
+                    && *sequence >= min_sequence
+                {
+                    (*sequence, *started, fetch.clone(), true)
+                } else {
+                    let sequence = state.sequence;
+                    state.sequence += 1;
+                    let uri = uri.to_owned();
+                    let fetcher = fetcher.clone();
+                    let pending = async move {
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(6),
+                            fetch(&uri, fetcher),
+                        ).await.unwrap_or(Err(FetchFailure::Transport))
+                    }.boxed().shared();
+                    let started = chrono::Utc::now().timestamp_millis();
+                    state.pending.retain(|_, (_, started_at, _)| started.saturating_sub(*started_at) < 6_000);
+                    _ = state.pending.insert(key.to_owned(), (sequence, started, pending.clone()));
+                    (sequence, started, pending, false)
+                }
+            };
+            let result = pending.await;
+            let mut state = self.state()?;
+            if state.pending.get(key).is_some_and(|(current, _, _)| *current == sequence) {
+                _ = state.pending.remove(key);
+                match &result {
+                    Ok(jwks) => {
+                        _ = state.entries.shift_remove(key);
+                        _ = state.entries.insert(key.to_owned(), Entry {
+                            jwks: jwks.clone(), fetched_at: started, sequence, failure: None,
+                        });
+                        if state.entries.len() > 500 {
+                            _ = state.entries.shift_remove_index(0);
+                        }
+                    }
+                    Err(FetchFailure::Capacity) => {}
+                    Err(failure) => {
+                        if let Some(entry) = state.entries.get_mut(key)
+                            && entry.sequence <= sequence
+                            && (!matches!(entry.failure, Some((_, FetchFailure::Invalid | FetchFailure::Rejected)))
+                                || matches!(failure, FetchFailure::Invalid | FetchFailure::Rejected))
+                        {
+                            entry.failure = Some((chrono::Utc::now().timestamp_millis(), *failure));
+                        }
+                    }
+                }
+            }
+            if !joined || result.is_ok() || retry {
+                return Ok(result);
+            }
+            retry = true;
         }
-        Ok(())
     }
 }
 fn owner(client: &OAuthClient) -> Option<&str> {
@@ -109,59 +193,11 @@ fn cache_key(client: &OAuthClient, uri: &str) -> String {
             .unwrap_or("managed")
     )
 }
-fn transport(
-    provider: &super::OAuthProviderPlugin,
-    client: &OAuthClient,
-) -> Option<Arc<dyn OAuthClientMetadataResourceFetch>> {
-    let id = owner(client)?;
-    provider
-        .config
-        .client_discoveries
-        .iter()
-        .find(|source| source.id() == id)?
-        .metadata_resource_fetch()
-}
-fn validate_uri<S: AuthSchema>(
-    ctx: &AuthContext<S>,
-    client: &OAuthClient,
-    uri: &str,
-) -> AuthResult<Result<(), &'static str>> {
-    let parsed =
-        url::Url::parse(uri).map_err(|_| AuthError::internal("Invalid client JWKS URL"))?;
-    if parsed.scheme() != "https" {
-        return Ok(Err("jwks_uri must use HTTPS"));
-    }
-    if !parsed.username().is_empty()
-        || parsed
-            .password()
-            .is_some_and(|password| !password.is_empty())
-    {
-        return Ok(Err("jwks_uri must not contain credentials"));
-    }
-    if parsed.fragment().is_some() {
-        return Ok(Err("jwks_uri must not include a fragment component"));
-    }
-    if !crate::sso::endpoint_host::public(parsed.host_str().unwrap_or_default()) {
-        return Ok(Err(
-            "jwks_uri must not point to a private or reserved address",
-        ));
-    }
-    if owner(client).is_some()
-        && url::Url::parse(&client.client_id).is_ok_and(|id| {
-            matches!(id.scheme(), "https" | "http") && id.origin() == parsed.origin()
-        })
-    {
-        return Ok(Ok(()));
-    }
-    if !ctx.config.is_redirect_target_trusted(uri) {
-        return Ok(Err("client jwks_uri is not trusted"));
-    }
-    Ok(Ok(()))
-}
 pub(super) async fn get<S: AuthSchema>(
     ctx: &AuthContext<S>,
     provider: &super::OAuthProviderPlugin,
     client: &OAuthClient,
+    request: Option<&AuthRequest>,
 ) -> AuthResult<Result<Value, &'static str>> {
     if let Some(inline) = client
         .metadata
@@ -179,61 +215,81 @@ pub(super) async fn get<S: AuthSchema>(
     let Some(uri) = uri(client) else {
         return Ok(Err("client has no JWKS configured"));
     };
-    let fetcher = transport(provider, client);
+    let discovery = owner(client).and_then(|id| provider.client_discovery(id));
+    let fetcher = discovery.and_then(super::OAuthClientDiscovery::metadata_resource_fetch);
     if owner(client).is_some() && fetcher.is_none() {
-        return Ok(Err(
-            "client discovery does not provide a metadata resource transport",
-        ));
+        return Ok(Err("client discovery does not provide a metadata resource transport"));
     }
-    if let Err(description) = validate_uri(ctx, client, uri)? {
-        return Ok(Err(description));
+    if let Some(error) = super::clients::remote_key_uri_error(uri) {
+        return Ok(Err(error));
     }
+    if !ctx.config.is_redirect_target_trusted(uri) {
+        let trusted = match owner(client) {
+            Some(id) => provider.allows_discovered_jwks_origin(
+                ctx, request, id, &client.client_id, uri,
+            ).await,
+            None => false,
+        };
+        if !trusted {
+            return Ok(Err("client jwks_uri is not trusted"));
+        }
+    }
+
     let now = chrono::Utc::now().timestamp_millis();
     let key = cache_key(client, uri);
-    let cache = provider.client_jwks.clone();
+    let cache = &provider.client_jwks;
     let cached = cache.get(&key)?;
-    if let Some(entry) = &cached
-        && now.saturating_sub(entry.fetched_at) < 300_000
-    {
-        return Ok(Ok(entry.jwks.clone()));
-    }
-    match fetch(uri, fetcher).await {
-        Ok(Some(jwks)) => {
-            cache.set(key, jwks.clone(), now)?;
-            Ok(Ok(jwks))
+    let stale_ms = discovery
+        .and_then(super::OAuthClientDiscovery::jwks_stale_if_error)
+        .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+        .map_or(0.0, |seconds| seconds.min(86_400.0) * 1000.0);
+    if let Some(entry) = &cached {
+        let age = now.saturating_sub(entry.fetched_at);
+        if age < FRESH_MS || (age >= DEFAULT_STALE_MS && age as f64 <= stale_ms
+            && matches!(entry.failure, Some((failed_at, FetchFailure::Transient))
+                if now.saturating_sub(failed_at) < 60_000))
+        {
+            return Ok(Ok(entry.jwks.clone()));
         }
-        Ok(None) => Ok(Err(FETCH_ERROR)),
-        Err(()) => Ok(
-            if let Some(entry) =
-                cached.filter(|entry| now.saturating_sub(entry.fetched_at) < 600_000)
-            {
-                Ok(entry.jwks)
-            } else {
-                Err(FETCH_ERROR)
-            },
-        ),
+    }
+    match cache.load(&key, uri, fetcher, 0).await? {
+        Ok(jwks) => Ok(Ok(jwks)),
+        Err(failure) => Ok(cached.filter(|entry| {
+            if matches!(failure, FetchFailure::Invalid) {
+                return false;
+            }
+            let age = now.saturating_sub(entry.fetched_at);
+            let failed_at = chrono::Utc::now().timestamp_millis();
+            let transient = match failure {
+                FetchFailure::Transient => !matches!(
+                    entry.failure, Some((_, FetchFailure::Invalid | FetchFailure::Rejected))
+                ),
+                FetchFailure::Capacity => matches!(
+                    entry.failure,
+                    Some((previous, FetchFailure::Transient)) if failed_at.saturating_sub(previous) <= FRESH_MS
+                ),
+                _ => false,
+            };
+            age < DEFAULT_STALE_MS
+                || (transient && failed_at.saturating_sub(entry.fetched_at) as f64 <= stale_ms)
+        }).map(|entry| entry.jwks).ok_or(FETCH_ERROR)),
     }
 }
 pub(super) async fn refetch(
     provider: &super::OAuthProviderPlugin,
     client: &OAuthClient,
+    min_sequence: u64,
 ) -> AuthResult<Option<Value>> {
     let Some(uri) = uri(client) else {
         return Ok(None);
     };
-    let fetcher = transport(provider, client);
+    let fetcher = owner(client).and_then(|id| provider.client_discovery(id))
+        .and_then(super::OAuthClientDiscovery::metadata_resource_fetch);
     if owner(client).is_some() && fetcher.is_none() {
         return Ok(None);
     }
-    let Ok(Some(jwks)) = fetch(uri, fetcher).await else {
-        return Ok(None);
-    };
-    provider.client_jwks.set(
-        cache_key(client, uri),
-        jwks.clone(),
-        chrono::Utc::now().timestamp_millis(),
-    )?;
-    Ok(Some(jwks))
+    Ok(provider.client_jwks.load(&cache_key(client, uri), uri, fetcher, min_sequence)
+        .await?.ok())
 }
 struct AbortTimer(tokio::task::JoinHandle<()>);
 impl Drop for AbortTimer {
@@ -244,7 +300,7 @@ impl Drop for AbortTimer {
 async fn fetch(
     uri: &str,
     transport: Option<Arc<dyn OAuthClientMetadataResourceFetch>>,
-) -> Result<Option<Value>, ()> {
+) -> FetchResult {
     let (sender, receiver) = watch::channel(false);
     let signal = OAuthClientMetadataAbortSignal {
         receiver,
@@ -262,17 +318,17 @@ async fn fetch(
                 uri,
                 OAuthClientMetadataFetchOptions {
                     headers,
-                    redirect: "error",
-                    signal,
+                    redirect: "manual",
+                    signal: signal.clone(),
                 },
             )
             .await
-            .map_err(|_| ())?
+            .map_err(|error| transport_failure(&error, signal.aborted()))?
     } else {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
-            .map_err(|_| ())?;
+            .map_err(|error| transport_failure(&error, signal.aborted()))?;
         OAuthClientMetadataFetchResponse {
             response: client
                 .get(uri)
@@ -280,30 +336,37 @@ async fn fetch(
                 .timeout(std::time::Duration::from_secs(5))
                 .send()
                 .await
-                .map_err(|_| ())?,
+                .map_err(|error| transport_failure(&error, signal.aborted()))?,
             redirected: false,
         }
     };
-    if response.redirected || response.response.status() != reqwest::StatusCode::OK {
-        return Err(());
+    let status = response.response.status().as_u16();
+    if response.redirected {
+        return Err(FetchFailure::Rejected);
+    }
+    if matches!(status, 500 | 502 | 503 | 504) {
+        return Err(FetchFailure::Transient);
+    }
+    if status != 200 {
+        return Err(FetchFailure::Rejected);
     }
     let Some(content_type) = header(&response.response, "content-type") else {
-        return Err(());
+        return Err(FetchFailure::Rejected);
     };
     if !json_content_type(&content_type) {
-        return Err(());
+        return Err(FetchFailure::Rejected);
     }
     if header(&response.response, "content-length")
         .as_deref()
         .and_then(alibi_core::utils::javascript::string_to_number)
         .is_some_and(|length| length.is_finite() && length > 65_536.0)
     {
-        return Err(());
+        return Err(FetchFailure::Rejected);
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.response.chunk().await.map_err(|_| ())? {
+    while let Some(chunk) = response.response.chunk().await.map_err(|error| transport_failure(&error, signal.aborted()))? {
         if bytes.len().saturating_add(chunk.len()) > MAX_BYTES {
-            return Err(());
+            return Err(FetchFailure::Rejected);
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -312,14 +375,48 @@ async fn fetch(
     let Ok(parsed) =
         alibi_core::utils::json::parse_value(text).and_then(|value| value.to_json_value())
     else {
-        return Ok(None);
+        return Err(FetchFailure::Invalid);
     };
     let valid = parsed
         .get("keys")
         .and_then(Value::as_array)
         .is_some_and(|keys| !keys.is_empty() && keys.iter().all(Value::is_object))
         && super::clients::public_jwks_error(&parsed).is_none();
-    Ok(valid.then_some(parsed))
+    valid.then_some(parsed).ok_or(FetchFailure::Invalid)
+}
+fn transport_failure(
+    error: &(dyn std::error::Error + 'static),
+    aborted: bool,
+) -> FetchFailure {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if error.downcast_ref::<reqwest::Error>().is_some_and(reqwest::Error::is_timeout)
+            || error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                use std::io::ErrorKind;
+                matches!(error.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionRefused
+                    | ErrorKind::TimedOut | ErrorKind::HostUnreachable | ErrorKind::NetworkUnreachable
+                    | ErrorKind::BrokenPipe)
+            })
+        {
+            return FetchFailure::Transient;
+        }
+        if let Some(AuthError::Api { code: Some(code), .. }) = error.downcast_ref::<AuthError>()
+            && (matches!(code.as_str(), "EAI_AGAIN" | "ECONNRESET" | "ECONNREFUSED"
+                | "ETIMEDOUT" | "EHOSTUNREACH" | "ENETUNREACH" | "EPIPE"
+                | "UND_ERR_CONNECT_TIMEOUT" | "UND_ERR_HEADERS_TIMEOUT"
+                | "UND_ERR_BODY_TIMEOUT" | "UND_ERR_SOCKET")
+                || (aborted && code == "ERR_CIMD_REQUEST_ABORTED"))
+        {
+            return FetchFailure::Transient;
+        }
+        if matches!(error.downcast_ref::<AuthError>(),
+            Some(AuthError::Api { code: Some(code), .. }) if code == "ERR_CIMD_DNS_LOOKUP_LIMIT")
+        {
+            return FetchFailure::Capacity;
+        }
+        current = error.source();
+    }
+    FetchFailure::Transport
 }
 fn header(response: &reqwest::Response, name: &str) -> Option<String> {
     let values = response

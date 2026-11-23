@@ -68,18 +68,17 @@ async fn server_phone_profile_guard_precedes_admission<B: Backend>(db: Db) -> Te
             )
             .await
             .unwrap_err();
+        // A missing or primitive body reaches body validation, as without the plugin.
         let expected = match &body {
             Some(Value::Object(_)) => 401,
-            Some(Value::Array(_)) => 400,
-            _ => 500,
+            _ => 400,
         };
         assert_eq!(denied.error.status_code(), expected, "{body:?}: {denied}");
-        if expected == 500 {
-            assert!(
-                denied
-                    .error
-                    .to_string()
-                    .contains("An error occurred during hook matcher execution")
+        if expected == 400 {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&denied.error.to_auth_response().body)?["code"],
+                "VALIDATION_ERROR",
+                "{body:?}"
             );
         }
     }

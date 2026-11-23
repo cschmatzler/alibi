@@ -340,7 +340,7 @@ compatScenario(
 );
 
 compatScenario(
-  "organization deletion of a real legacy orphan clears only the authenticated token before empty missing-row rejection",
+  "organization deletion of a real legacy orphan keeps the active selection on missing-row rejection",
   async (ctx) => {
     const owner = await signUp(ctx, "orphan-owner", profile);
     const created = await owner.client.organization.create({
@@ -376,10 +376,10 @@ compatScenario(
     });
     expect(rejected.error?.status).toBe(400);
 
-    // The rejection still cleared the selection on the authenticated token only.
+    // Better Auth #12334 preserves the selection when no organization was deleted.
     const after = await persisted(ctx, owner.user.id);
     expect(after.sessions.find((r) => r.id === activeSessionId)).toMatchObject({
-      activeOrganizationId: null,
+      activeOrganizationId: id,
     });
     expect(after.sessions.find((r) => r.id !== activeSessionId)).toEqual(
       sessionsBefore.sessions.find((r) => r.id !== activeSessionId),

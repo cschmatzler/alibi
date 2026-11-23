@@ -34,7 +34,7 @@ try {
       snapshots: winners.map(row => ({ id: row.id, value: row.value, expiresAt: row.expiresAt })), stored });
   }
   assert.equal(cases.length, 6);
-  await writeFile(new URL("../../fixtures/mysql-verification-claims.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", cases }) + "\n");
+  await writeFile(new URL("../../fixtures/mysql-verification-claims.json", import.meta.url), JSON.stringify({ better_auth: "1.7.27", cases }) + "\n");
   console.log(`${cases.length} actual MySQL guarded verification claims including an eight-call race`);
 } finally {
   await database.close();

@@ -26,7 +26,7 @@ async fn check(asynchronous: bool, compatible: bool) -> TestResult {
     } else {
         include_str!("../../../fixtures/account-timestamp-mysql-hooks.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(fixture["backend"], "mysql");
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 8);

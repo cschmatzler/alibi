@@ -512,21 +512,13 @@ compatScenario(
         expect(response.headers.get("content-type")).toBe("application/json");
         const value = (await response.json()) as any;
         if (!success) expect(value).toEqual({ error, error_description: description });
-        // Client authentication precedes the code lookup, so a rejected secret
-        // leaves the one-time code unconsumed.
-        const retained = early || name === "code" || name === "secret";
+        // Better Auth #12499 leaves the code available for a corrected retry.
+        const retained = !success;
         let issued = success ? value : null;
         if (!success) {
           const retry = await exchange(valid);
-          expect(retry.status).toBe(retained ? 200 : 400);
-          if (retained) {
-            issued = await retry.json();
-          } else {
-            expect(await retry.json()).toEqual({
-              error: "invalid_grant",
-              error_description: "invalid code",
-            });
-          }
+          expect(retry.status).toBe(200);
+          issued = await retry.json();
         }
         if (issued) {
           const row = (await (

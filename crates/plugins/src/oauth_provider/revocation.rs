@@ -32,7 +32,8 @@ impl OAuthProviderPlugin {
             Err(response) => return Ok(response),
         };
         if credentials.client_id.is_empty() {
-            return error(401, "invalid_client", "missing required credentials");
+            return error(401, "invalid_client", "missing required credentials")
+                .map(super::clients::with_basic_challenge);
         }
         let raw = body
             .get("token")
@@ -54,6 +55,43 @@ impl OAuthProviderPlugin {
         }
         let (hint, kinds) = super::credentials::token_type_hint(&body);
         for kind in kinds {
+            if matches!(kind, OAuthTokenKind::Access)
+                && !self.config.disable_jwt_plugin
+                && token.split('.').count() == 3
+                && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
+            {
+                let verification = jwt
+                    .verify_signed_payload_with_optional_kid(token, req.physical_request(), ctx)
+                    .await;
+                let claims = match verification {
+                    Ok(claims) => claims,
+                    Err(error) if error.status_code() == 400 => None,
+                    Err(error) => return Err(error),
+                };
+                if let Some(claims) = claims
+                    && claims.get("iss").and_then(Value::as_str)
+                        == Some(&super::access_validation::issuer(ctx, false))
+                {
+                    let now = chrono::Utc::now().timestamp() as f64;
+                    if claims.get("exp").and_then(Value::as_f64).is_some_and(|exp| exp <= now)
+                        || claims.get("azp").and_then(Value::as_str).is_none_or(str::is_empty)
+                    {
+                        return EndpointResponse::json(&Value::Null);
+                    }
+                    if claims.get("nbf").and_then(Value::as_f64).is_none_or(|nbf| nbf <= now) {
+                        if let Some(audiences) = super::access_validation::audience_values(claims.get("aud"))
+                            && super::access_validation::audiences_allowed(self, ctx, &audiences).await?
+                        {
+                            return error(
+                                400,
+                                "unsupported_token_type",
+                                "JWT access tokens are self-contained and cannot be revoked server-side",
+                            );
+                        }
+                        return EndpointResponse::json(&Value::Null);
+                    }
+                }
+            }
             let Some(prefix_token) = self.decode_token_prefix(token, *kind) else {
                 if matches!(kind, OAuthTokenKind::Refresh) && hint == "refresh_token" {
                     return error(400, "invalid_token", "refresh token not found");
@@ -61,8 +99,11 @@ impl OAuthProviderPlugin {
                 continue;
             };
             let decoded = if matches!(kind, OAuthTokenKind::Refresh) {
-                match self.decode_refresh_token(token).await {
+                match self.decode_refresh_token_for_lookup(token).await {
                     Ok(Some(decoded)) => Some(decoded),
+                    Ok(None) if hint == "refresh_token" => {
+                        return error(400, "invalid_token", "refresh token not found");
+                    }
                     Ok(None) => continue,
                     Err(error) if is_endpoint_api_error(&error) => {
                         if hint != "refresh_token" {
@@ -102,12 +143,16 @@ impl OAuthProviderPlugin {
             if matches!(kind, OAuthTokenKind::Refresh)
                 && row.metadata.get("revoked").is_some_and(|v| !v.is_null())
             {
-                ctx.database
-                    .delete_oauth_refresh_family(
-                        &credentials.client_id,
-                        row.user_id.as_deref().unwrap_or("undefined"),
-                    )
-                    .await?;
+                // Only the owner can replay a token. Another client's token
+                // must not delete the presenting client's own grants.
+                if row.client_id == credentials.client_id {
+                    ctx.database
+                        .delete_oauth_refresh_family(
+                            &credentials.client_id,
+                            row.user_id.as_deref().unwrap_or("undefined"),
+                        )
+                        .await?;
+                }
                 return error(400, "invalid_request", "refresh token revoked");
             }
             if row.client_id != credentials.client_id {

@@ -201,7 +201,8 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
       expect(signoutHeaders?.token).toBeNull();
 
       if (profile === "bearer-signed") {
-        expect(signoutHeaders?.expose).toBe("X-First, X-First, X-Second");
+        // Better Auth #12603 merges exposed header names without duplicates.
+        expect(signoutHeaders?.expose).toBe("X-First, X-Second");
       }
 
       const revoked = await foreign.getSession({

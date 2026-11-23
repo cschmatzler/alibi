@@ -10,8 +10,8 @@ use super::{
 use alibi_core::{AuthError, AuthResult, AuthSchema, store::ScimProjectionPreparedUser};
 use chrono::SubsecRound;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QuerySelect, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, Set,
+    sea_query::Expr,
 };
 fn missing() -> AuthError {
     AuthError::Api {
@@ -60,10 +60,6 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         member::Entity::find()
             .filter(member::Column::ConnectionId.eq(connection))
             .filter(member::Column::ScimUserId.eq(id))
-            .limit(
-                u64::try_from(self.config.advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
             .all(db)
             .await
             .map_err(map_db_err)

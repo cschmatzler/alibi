@@ -171,7 +171,17 @@ pub(super) struct AccessTokenIssuance<'a> {
     pub issued: chrono::DateTime<chrono::Utc>,
     pub expires: &'a Value,
     pub policy: &'a super::resource_policy::ResourceAdmission,
-    pub refresh_id: Option<&'a str>,
+    pub refresh: Option<&'a IssuedRefresh>,
+}
+/// A refresh token stored for this issuance: its row id, protected lookup
+/// value, and presented credential.
+pub(super) struct IssuedRefresh {
+    pub id: String,
+    pub hash: String,
+    pub token: String,
+}
+fn grant_revoked_during_issuance() -> EndpointError {
+    super::resource_policy::failure("invalid_grant", "grant revoked during token issuance")
 }
 fn token_metadata(p: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
     let mut metadata = serde_json::Map::from_iter([
@@ -271,7 +281,7 @@ impl OAuthProviderPlugin {
             issued,
             expires: expires_claim,
             policy,
-            refresh_id,
+            refresh,
         } = issuance;
         let audiences = &policy.audiences;
         let expires = expiration_date(expires_claim)?;
@@ -344,15 +354,16 @@ impl OAuthProviderPlugin {
             } else {
                 random_token()
             };
-            if let Some(id) = refresh_id {
-                _ = metadata.insert("refreshId".into(), json!(id));
+            if let Some(refresh) = refresh {
+                _ = metadata.insert("refreshId".into(), json!(refresh.id));
             }
-            _ = ctx
+            let stored = self.hash_token(&token, "access_token").await?;
+            let created = ctx
                 .database
                 .create_oauth_token(
                     OAuthTokenKind::Access,
                     CreateOAuthToken {
-                        token: self.hash_token(&token, "access_token").await?,
+                        token: stored.clone(),
                         client_id: p.client.client_id.clone(),
                         user_id,
                         session_id: p.session_id.clone(),
@@ -362,7 +373,38 @@ impl OAuthProviderPlugin {
                         expires_at: expires,
                     },
                 )
-                .await?;
+                .await;
+            // A concurrent reuse detection or code replay can delete the
+            // refresh token issued with this one before or after this insert.
+            let refresh_gone = || async {
+                match refresh {
+                    Some(refresh) => ctx
+                        .database
+                        .get_oauth_token(OAuthTokenKind::Refresh, &refresh.hash)
+                        .await
+                        .map(|row| row.is_none()),
+                    None => Ok(false),
+                }
+            };
+            match created {
+                Err(error) => {
+                    if refresh_gone().await? {
+                        tracing::warn!(%error, "access token not stored: its refresh token was revoked during issuance");
+                        return Err(grant_revoked_during_issuance());
+                    }
+                    return Err(error.into());
+                }
+                Ok(_) => {
+                    // Stores without the `refreshId` foreign key accept the
+                    // insert after that revocation.
+                    if refresh_gone().await? {
+                        ctx.database
+                            .delete_oauth_token(OAuthTokenKind::Access, &stored)
+                            .await?;
+                        return Err(grant_revoked_during_issuance());
+                    }
+                }
+            }
             self.encode_token_prefix(&token, OAuthTokenKind::Access)
         };
         Ok(access)
@@ -374,7 +416,7 @@ impl OAuthProviderPlugin {
         policy: &super::resource_policy::ResourceAdmission,
         issued: chrono::DateTime<chrono::Utc>,
         requested: bool,
-    ) -> Result<Option<(String, String)>, EndpointError> {
+    ) -> Result<Option<IssuedRefresh>, EndpointError> {
         let Some(user) = p.user.as_ref() else {
             return Ok(None);
         };
@@ -405,6 +447,13 @@ impl OAuthProviderPlugin {
                 "invalid refresh token",
             ));
         }
+        // A rotated token stays bound to its parent's session after that
+        // session ends, so deleting the session still retires it. Only `sid` drops.
+        let session_id = p
+            .refresh_token
+            .as_ref()
+            .and_then(|row| row.session_id.clone())
+            .or_else(|| p.session_id.clone());
         let mut metadata = token_metadata(p);
         let resources = p
             .refresh_token
@@ -420,10 +469,10 @@ impl OAuthProviderPlugin {
             .create_oauth_token(
                 OAuthTokenKind::Refresh,
                 CreateOAuthToken {
-                    token: protected,
+                    token: protected.clone(),
                     client_id: p.client.client_id.clone(),
                     user_id: Some(user.id().as_ref().to_owned()),
-                    session_id: p.session_id.clone(),
+                    session_id: session_id.clone(),
                     authorization_code_id: p.authorization_code_id.clone(),
                     metadata: Value::Object(metadata),
                     created_at: issued,
@@ -434,10 +483,13 @@ impl OAuthProviderPlugin {
                 },
             )
             .await?;
-        Ok(Some((
-            row.id,
-            self.encode_refresh_token(&token, p.session_id.as_deref())?,
-        )))
+        Ok(Some(IssuedRefresh {
+            id: row.id,
+            hash: protected,
+            token: self
+                .encode_refresh_token(&token, session_id.as_deref())
+                .await?,
+        }))
     }
     pub(super) async fn mint_tokens<S: AuthSchema>(
         &self,
@@ -454,13 +506,26 @@ impl OAuthProviderPlugin {
         let admission = self
             .admit_resources(ctx, &p.client.client_id, &p.scopes, Some(&resource_value))
             .await?;
-        let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
         let refresh_requested = p.scopes.iter().any(|scope| scope == "offline_access")
             || p.refresh_token
                 .as_ref()
                 .and_then(|row| row.metadata.get("scopes"))
                 .and_then(Value::as_array)
                 .is_some_and(|scopes| scopes.iter().any(|scope| scope == "offline_access"));
+        // The session requirement applies to trusted issuers as well as the
+        // refresh grant, but only when this request would mint a refresh token.
+        if refresh_requested
+            && p.user.is_some()
+            && super::authentication::client_allows_grant(&p.client, "refresh_token")
+            && p.session_id.is_none()
+            && let Some(refresh) = &p.refresh_token
+        {
+            let effective_scopes = admission.scopes.iter().map(String::as_str).collect::<Vec<_>>();
+            if super::refresh::is_session_bound(refresh, &effective_scopes) {
+                return Err(super::resource_policy::failure("invalid_grant", "invalid refresh token"));
+            }
+        }
+        let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
         let mut resolved = p.clone();
         resolved.scopes = admission.scopes.clone();
         self.extend_id_token_claims(ctx, req, &mut resolved, grant_type)
@@ -503,7 +568,7 @@ impl OAuthProviderPlugin {
                     issued,
                     expires: &expires_claim,
                     policy: &admission,
-                    refresh_id: refresh.as_ref().map(|(id, _)| id.as_str()),
+                    refresh: refresh.as_ref(),
                 },
             )
             .await?;
@@ -512,7 +577,7 @@ impl OAuthProviderPlugin {
             &access,
             issued.timestamp(),
             expires_claim,
-            refresh.map(|(_, token)| token),
+            refresh.map(|refresh| refresh.token),
         )?;
         if p.user.is_some() && p.scopes.iter().any(|s| s == "openid") {
             let proof = json!({"userId":p.user.as_ref().map(|u|u.id().as_ref().to_owned()),"sessionId":p.session_id,"authTime":p.auth_time.map(|t|t.timestamp_millis()),"query":{"nonce":p.nonce},"idTokenClaims":p.id_token_claims});

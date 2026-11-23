@@ -69,15 +69,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
                 query: call.query().cloned(),
             });
         }
-        let body = call
-            .body()
-            .filter(|body| body.as_object().is_some())
-            .ok_or_else(|| {
-                crate::endpoint::validation(format!(
-                    "[body] Invalid input: expected record, received {}",
-                    crate::authentication_helpers::json_type(call.body())
-                ))
-            })?;
+        let body = validate_update_user_body(call.body())?;
         Ok(alibi_core::endpoint::EndpointInput {
             body: Some(body.clone()),
             query: call.query().cloned(),
@@ -154,16 +146,27 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     context: &AuthContext<S>,
 ) -> AuthResult<AuthResponse> {
-    // Preserve the HTTP owner's admission before JSON decoding.
+    let raw_body = req
+        .body
+        .as_ref()
+        .map(|_| req.body_as_json())
+        .transpose()
+        .map_err(|error| AuthError::bad_request(format!("Invalid JSON: {error}")))?;
+    let body = validate_update_user_body(raw_body.as_ref())?;
     let (user, session) = context
         .require_cached_session(req)
         .await
         .map_err(crate::helpers::unauthorized_if_session_missing)?;
-    _ = req
-        .body_as_json::<serde_json::Value>()
-        .map_err(|error| AuthError::bad_request(format!("Invalid JSON: {error}")))?;
-    let raw_body: JsValue = req.body_as_json()?;
-    update_user_core(req, &raw_body, user, session, context).await
+    update_user_core(req, body, user, session, context).await
+}
+
+fn validate_update_user_body(body: Option<&JsValue>) -> AuthResult<&JsValue> {
+    body.filter(|body| body.is_object()).ok_or_else(|| {
+        crate::endpoint::validation(format!(
+            "[body] Invalid input: expected record, received {}",
+            crate::authentication_helpers::json_type(body)
+        ))
+    })
 }
 
 #[expect(

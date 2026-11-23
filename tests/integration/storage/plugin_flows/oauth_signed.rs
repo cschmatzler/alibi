@@ -2,14 +2,78 @@
 use super::*;
 use alibi::plugins::OAuthPlugin;
 use alibi::plugins::oauth::{
-    AppleOptions, CognitoOptions, FacebookOptions, HttpOAuthJwksSource, MicrosoftOptions,
+    AppleOptions, CognitoOptions, FacebookOptions, HttpOAuthJwksSource, KakaoOptions, MicrosoftOptions,
     OAuthProvider,
 };
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use sha2::{Digest as _, Sha256};
 
-backend_tests!(signed_provider_identity_requires_its_configured_authority);
+backend_tests!(
+    signed_provider_identity_requires_its_configured_authority,
+    kakao_native_id_token_and_code_grant_share_one_account
+);
 postgres_tests!(signed_provider_identity_requires_its_configured_authority);
+
+// Kakao's native audience and numeric account identity follow upstream #12316.
+async fn kakao_native_id_token_and_code_grant_share_one_account<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let remote = Provider::start("application/json", "{}").await;
+    let jwks = serde_json::from_str(include_str!("../../../fixtures/one-tap/jwks.json"))?;
+    remote.respond_at("/keys", 200, jwks);
+    remote.respond_at("/token", 200, json!({"access_token":"kakao-access"}));
+    remote.respond_at("/profile", 200, json!({
+        "id":4012345678_u64,
+        "kakao_account":{"email":"kakao-native@example.test","is_email_valid":true,"is_email_verified":true}
+    }));
+    let mut options = KakaoOptions::new("rest-client", Some("secret".into()));
+    options.jwks_source = Some(Arc::new(HttpOAuthJwksSource::new(remote.url.join("keys")?)));
+    options.user_info_endpoint = Some(remote.url.join("profile")?.into());
+    let mut provider = OAuthProvider::kakao_with_options(options)
+        .with_client_ids(vec!["rest-client".into(), "native-key".into()]);
+    provider.token_url = remote.url.join("token")?.into();
+    let auth = builder::<B>(&connection)
+        .plugin(OAuthPlugin::new().add_provider("kakao", provider))
+        .build()
+        .await?;
+
+    let now = chrono::Utc::now().timestamp();
+    let mut claims = json!({"iss":"https://kauth.kakao.com","aud":"foreign-key",
+        "sub":"4012345678","email":"kakao-native@example.test","nickname":"Kakao Native",
+        "picture":"https://images.test/kakao-native","email_verified":true,"iat":now,"exp":now+300});
+    for (audience, status) in [("foreign-key", 401), ("native-key", 200)] {
+        claims["aud"] = json!(audience);
+        let proof = token(&claims, false, "one-tap-local-rs256")?;
+        let response = call(&auth, request("/sign-in/social", Some(json!({
+            "provider":"kakao","idToken":{"token":proof}
+        })), ""), status).await;
+        let response = body(&response);
+        if status == 401 {
+            assert_eq!(response["code"], "INVALID_TOKEN");
+            assert_eq!(db.count("account").await?, 0);
+        } else {
+            assert_eq!(response["user"]["name"], "Kakao Native");
+            assert_eq!(response["user"]["image"], "https://images.test/kakao-native");
+            assert_eq!(response["user"]["emailVerified"], false);
+            assert_eq!(db.count("account").await?, 1);
+        }
+    }
+    let (state, cookie) = super::social_flows::authorize(
+        &auth, "/sign-in/social",
+        json!({"provider":"kakao","callbackURL":"/home"}), "",
+    ).await;
+    let mut callback = request("/callback/kakao", None, &cookie);
+    callback.set_query_pairs([("state", state.as_str()), ("code", "kakao-code")]);
+    let response = call(&auth, callback, 302).await;
+    assert!(response.headers["location"].ends_with("/home"), "{response:?}");
+    assert_eq!(db.count("account").await?, 1);
+    assert_eq!(db.text("SELECT \"accountId\" FROM \"account\"", &[]).await?.as_deref(), Some("4012345678"));
+    assert_eq!(db.text("SELECT \"accessToken\" FROM \"account\"", &[]).await?.as_deref(), Some("kakao-access"));
+    let exchanges = remote.take();
+    let code = exchanges.iter().find(|exchange| exchange.path == "/token").unwrap();
+    assert!(url::form_urlencoded::parse(&code.body)
+        .any(|(key, value)| key == "client_id" && value == "rest-client"));
+    B::close(connection).await
+}
 
 pub(super) fn token(claims: &Value, wrong_signature: bool, kid: &str) -> TestResult<String> {
     let pem = if wrong_signature {

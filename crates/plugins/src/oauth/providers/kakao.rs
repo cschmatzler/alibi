@@ -1,17 +1,24 @@
-//! Kakao's ordered scopes, nested profile mapping and raw account identity.
+//! Kakao's ordered scopes, nested profile mapping, raw account identity and
+//! ID tokens from Kakao's native SDKs.
 use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
     OAuthUserInfoResponse,
 };
+use crate::oauth::id_token::OAuthNonceComparison;
+use crate::oauth::{HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource};
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
+use std::sync::Arc;
 
 /// Application-owned Kakao configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
+/// To accept ID tokens from the Kakao SDKs, pass the native app key as well
+/// with `OAuthProvider::with_client_ids`, keeping the REST API key first.
 #[derive(Clone, Default)]
 pub struct KakaoOptions {
+    /// The REST API key.
     pub client_id: String,
     pub client_secret: Option<String>,
     /// Sent only during authorization-code exchange.
@@ -22,6 +29,8 @@ pub struct KakaoOptions {
     pub redirect_uri: Option<String>,
     /// Trusted transport override retaining Kakao's actual GET and mapping.
     pub user_info_endpoint: Option<String>,
+    /// Trusted key authority for ID-token verification.
+    pub jwks_source: Option<Arc<dyn OAuthJwksSource>>,
     /// Receives the original profile before its raw account identity is resolved.
     pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
@@ -62,6 +71,25 @@ impl OAuthProvider {
         let endpoint = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://kapi.kakao.com/v2/user/me".into());
+        // https://developers.kakao.com/docs/en/kakaologin/rest-api#oidc-find-public-key
+        let verification = OAuthIdTokenConfig {
+            issuers: vec!["https://kauth.kakao.com".into()],
+            audience: None,
+            client_ids: None,
+            jwks_source: options.jwks_source.unwrap_or_else(|| {
+                Arc::new(HttpOAuthJwksSource::new(
+                    "https://kauth.kakao.com/.well-known/jwks.json",
+                ))
+            }),
+            max_age_secs: None,
+            allow_opaque_token: false,
+            algorithm: Some(jsonwebtoken::Algorithm::RS256),
+            algorithms: Some(vec![jsonwebtoken::Algorithm::RS256]),
+            default_key_algorithm: None,
+            selection: OAuthJwksSelection::RemoteRs256,
+            nonce_comparison: OAuthNonceComparison::Exact,
+            verify_claims: None,
+        };
         Self {
             client_id: options.client_id,
             client_secret: secret,
@@ -85,15 +113,16 @@ impl OAuthProvider {
                 authorization_code_client_key: options.client_key,
                 redirect_uri: options.redirect_uri,
                 login_hint: true,
-                pkce: false,
+                pkce: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
             account_subject: Some(subject),
-            get_user_info: Some(std::sync::Arc::new(KakaoUserInfo {
+            get_user_info: Some(Arc::new(KakaoUserInfo {
                 endpoint,
                 mapper: options.map_profile_to_user,
                 application_mapper: None,
             })),
+            id_token: Some(verification),
             ..Self::default()
         }
     }
@@ -133,6 +162,44 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
         if !truthy(&profile) {
             return Err("Missing kakao profile".into());
         }
+        self.profile_response(profile).await
+    }
+
+    /// The route has verified the client-submitted ID token. Its claims carry
+    /// no email verification status.
+    async fn get_user_info_from_id_token(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        let token = request.id_token.ok_or("Missing Kakao ID token")?;
+        let claims = super::remaining_profile::decode_grant_jwt(&token)?;
+        let claim = |name: &str| claims.get(name).cloned().unwrap_or(Value::Undefined);
+        // Same value as `id` from /v2/user/me, so both flows resolve to the same account.
+        let id = claims
+            .get("sub")
+            .and_then(super::remaining_profile::js_number)
+            .unwrap_or(f64::NAN);
+        let profile = Value::Object(Map::from_iter([
+            ("id".into(), Value::Number(id)),
+            (
+                "kakao_account".into(),
+                Value::Object(Map::from_iter([
+                    ("email".into(), claim("email")),
+                    (
+                        "profile".into(),
+                        Value::Object(Map::from_iter([
+                            ("nickname".into(), claim("nickname")),
+                            ("thumbnail_image_url".into(), claim("picture")),
+                        ])),
+                    ),
+                ])),
+            ),
+        ]));
+        self.profile_response(profile).await
+    }
+}
+impl KakaoUserInfo {
+    async fn profile_response(&self, profile: Value) -> Result<OAuthUserInfoResponse, String> {
         let account = profile.get("kakao_account").filter(|value| truthy(value));
         let kakao_profile = account
             .and_then(|value| value.get("profile"))

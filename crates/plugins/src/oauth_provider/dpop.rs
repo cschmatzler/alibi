@@ -48,6 +48,44 @@ pub(super) fn endpoint_url<S: AuthSchema>(
         .unwrap_or(path);
     format!("{base}{endpoint_path}")
 }
+/// Captures a proof's replay reservation without recording it, so a one-time
+/// code can be checked before it is consumed and the `jti` recorded after.
+#[derive(Default)]
+pub(super) struct DeferredReplay(std::sync::Mutex<Option<crate::oauth2::DpopReplayReservation>>);
+#[async_trait::async_trait]
+impl crate::oauth2::DpopReplayStore for DeferredReplay {
+    async fn reserve(
+        &self,
+        reservation: &crate::oauth2::DpopReplayReservation,
+    ) -> Result<bool, crate::oauth2::DpopError> {
+        if let Ok(mut pending) = self.0.lock() {
+            *pending = Some(reservation.clone());
+        }
+        Ok(true)
+    }
+}
+impl DeferredReplay {
+    /// Record the captured reservation; a `jti` already used fails the request.
+    pub(super) async fn record<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> Result<(), EndpointError> {
+        let pending = self.0.lock().ok().and_then(|mut pending| pending.take());
+        let Some(mut reservation) = pending else {
+            return Ok(());
+        };
+        reservation.now = Some(chrono::Utc::now());
+        let store = crate::oauth2::create_dpop_replay_store(ctx);
+        match crate::oauth2::DpopReplayStore::reserve(&store, &reservation).await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(super::resource_policy::failure(
+                "invalid_dpop_proof",
+                "DPoP proof jti has already been used",
+            )),
+            Err(error) => Err(AuthError::internal(error.message).into()),
+        }
+    }
+}
 impl OAuthProviderPlugin {
     pub(super) async fn resolve_dpop_binding<S: AuthSchema>(
         &self,
@@ -55,6 +93,17 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         params: &OAuthTokenIssueParams,
         policy: &super::resource_policy::ResourceAdmission,
+    ) -> Result<Option<Value>, EndpointError> {
+        self.resolve_dpop_binding_with(ctx, req, params, policy, None)
+            .await
+    }
+    pub(super) async fn resolve_dpop_binding_with<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        req: &impl SessionRequest,
+        params: &OAuthTokenIssueParams,
+        policy: &super::resource_policy::ResourceAdmission,
+        deferred: Option<&DeferredReplay>,
     ) -> Result<Option<Value>, EndpointError> {
         let metadata = params
             .client
@@ -102,7 +151,10 @@ impl OAuthProviderPlugin {
         // physical request whose method differs from the token endpoint.
         let mut options = crate::oauth2::VerifyDpopProofOptions::new(proof, "POST", &url);
         options.expected_jkt = refresh_jkt.or(code_jkt);
-        options.replay_store = Some(&replay);
+        options.replay_store = Some(match deferred {
+            Some(deferred) => deferred,
+            None => &replay,
+        });
         options.proof_max_age_seconds = self.config.dpop_proof_max_age_seconds;
         options.signing_algorithms = self.config.dpop_signing_algorithms.clone();
         match crate::oauth2::verify_dpop_proof(&options).await {

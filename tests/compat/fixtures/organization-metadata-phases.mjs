@@ -125,7 +125,7 @@ try {
   for (const clock of updateClocks) assert.deepEqual(clock, updateClocks[0]);
   for (const clock of sessionClocks) assert.deepEqual(clock, sessionClocks[0]);
   for (const cases of accountClocks) assert.deepEqual(cases, accountClocks[0]);
-  const common = { better_auth: "1.7.18", backends: profiles.map(profile => profile.backend) };
+  const common = { better_auth: "1.7.27", backends: profiles.map(profile => profile.backend) };
   const outputs = [
     ["organization-metadata-phases", { ...common, cases: profiles[0].cases }],
     ["user-creation-clock", { ...common, clock: userClocks[0] }],

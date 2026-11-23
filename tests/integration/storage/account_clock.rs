@@ -17,7 +17,7 @@ async fn check<B: Backend>(db: Db, action: &str) -> TestResult {
         .migrated::<B>("account-clock-source-secret-at-least-32")
         .await?;
     let fixture: Value = serde_json::from_str(include_str!("../../fixtures/account-clock.json"))?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     assert_eq!(fixture["backends"], json!(["sqlite", "postgres", "mysql"]));
     let cases = fixture["cases"].as_array().unwrap();
     assert_eq!(cases.len(), 2);

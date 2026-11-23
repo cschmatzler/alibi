@@ -12,8 +12,8 @@ const nullInput = process.argv[2] === "--null";
 assert.ok(process.argv[2] === undefined || nullInput, "unknown builtin clock mode");
 
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.version, "1.7.18");
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
+assert.equal(pin.version, "1.7.27");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
 for (const name of ["better-auth", "@better-auth/core", "@better-auth/kysely-adapter"]) {
   assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/${name}/package.json`, import.meta.url))).version, pin.version);
 }

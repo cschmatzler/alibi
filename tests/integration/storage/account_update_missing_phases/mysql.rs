@@ -10,7 +10,7 @@ async fn check(asynchronous: bool, transactions: bool, failures: bool) -> TestRe
     } else {
         include_str!("../../../fixtures/account-update-missing-mysql-phases.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let profiles = fixture["profiles"].as_array().unwrap();
     assert_eq!(profiles.len(), 1);
     let profile = &profiles[0];

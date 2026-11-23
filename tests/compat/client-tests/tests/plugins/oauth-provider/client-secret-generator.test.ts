@@ -121,7 +121,8 @@ compatScenario(
             action: "introspect",
             body: { client_id: client.client_id, client_secret: secret, token: "not-issued" },
           });
-          expect(result.status).toBe(401);
+          // Better Auth #12327 uses the same invalid_client response as a wrong secret.
+          expect(result.status).toBe(400);
           expect(result.headers.get("www-authenticate")).toBeNull();
           const body = await result.json();
           expect(body).toEqual({

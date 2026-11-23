@@ -3,9 +3,9 @@ import { readFile } from "node:fs/promises";
 import { wechat } from "../reference-server/node_modules/@better-auth/core/dist/social-providers/index.mjs";
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/core/package.json", import.meta.url)));
-assert.equal(pkg.version, "1.7.18");
+assert.equal(pkg.version, "1.7.27");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
+assert.equal(pin.commit, "9faf6f6a1155a6cdaf8ba2d25ce53e4f5a3fda72");
 const requests = [];
 const fetch = globalThis.fetch;
 const cases = [];

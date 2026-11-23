@@ -1280,6 +1280,14 @@ where
     async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
         self.store.create_jwk_with_connection(self.tx, data).await
     }
+    async fn create_wallet_address(
+        &self,
+        data: alibi_core::CreateWalletAddress,
+    ) -> AuthResult<alibi_core::WalletAddress> {
+        self.store
+            .insert_wallet_address(self.tx, self.tx, data)
+            .await
+    }
 
     async fn get_team(&self, organization_id: &str, team_id: &str) -> AuthResult<Option<Team>> {
         self.store

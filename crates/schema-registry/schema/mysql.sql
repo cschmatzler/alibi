@@ -1,4 +1,4 @@
--- Generated from Better Auth 1.7.18 by mysql-schema-assets.mjs.
+-- Generated from Better Auth 1.7.27 by mysql-schema-assets.mjs.
 
 create table `user` (`id` varchar(36) not null primary key, `name` varchar(255) not null, `email` varchar(255) not null unique, `emailVerified` boolean not null, `image` text, `createdAt` timestamp(3) default CURRENT_TIMESTAMP(3) not null, `updatedAt` timestamp(3) default CURRENT_TIMESTAMP(3) not null, `role` text, `banned` boolean, `banReason` text, `banExpires` timestamp(3), `isAnonymous` boolean, `phoneNumber` varchar(255) unique, `phoneNumberVerified` boolean, `lastLoginMethod` text, `username` varchar(255) unique, `displayUsername` text, `twoFactorEnabled` boolean);
 

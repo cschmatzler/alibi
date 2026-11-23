@@ -11,7 +11,7 @@ async fn check_raw_values(store: &impl PasskeyStore, backend: &str) -> TestResul
     } else {
         include_str!("../../../../crates/core/src/store/passkey_raw_optional_cases.json")
     })?;
-    assert_eq!(fixture["better_auth"], "1.7.18");
+    assert_eq!(fixture["better_auth"], "1.7.27");
     let mut count = 0;
     for case in fixture["cases"]
         .as_array()

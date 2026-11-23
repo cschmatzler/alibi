@@ -19,7 +19,7 @@ mod credentials;
 mod discovery;
 mod dpop;
 mod extension_authentication;
-mod interaction;
+pub(crate) mod interaction;
 pub use extension_authentication::{
     OAuthClientAssertionInput, OAuthClientAuthenticationStrategy,
     OAuthExtensionClientAuthentication, OAuthVerifiedClientAssertion,
@@ -148,6 +148,10 @@ pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
         default_result: bool,
     ) -> AuthResult<bool>;
 }
+/// Application policy for otherwise disallowed HTTP redirects.
+pub trait OAuthInsecureRedirectUriPolicy: Send + Sync + std::fmt::Debug {
+    fn allows(&self, uri: &url::Url) -> AuthResult<bool>;
+}
 /// The original request URI and URL-supplied client identity, before schema parsing.
 pub struct OAuthRequestUriInput<'a> {
     pub request_uri: &'a str,
@@ -175,6 +179,8 @@ pub struct OAuthProviderConfig {
     /// Protocol quotas registered with the global rate limiter, not private API calls.
     pub rate_limit: OAuthProviderRateLimits,
     pub scopes: Vec<String>,
+    /// Require an explicit openid scope on authorization requests.
+    pub require_openid: bool,
     pub extensions: Vec<std::sync::Arc<OAuthProviderExtension>>,
     /// Operator-owned `UserInfo` claims, applied after additive extension claims.
     /// May override ordinary profile claims, but never the authoritative subject.
@@ -203,6 +209,8 @@ pub struct OAuthProviderConfig {
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
     /// Override registered redirect matching after provider-owned URI safety checks.
     pub validate_redirect_uri: Option<std::sync::Arc<dyn OAuthRedirectUriValidator>>,
+    /// Opt in to HTTP redirects for URLs controlled by the application.
+    pub allow_insecure_redirect_uri: Option<std::sync::Arc<dyn OAuthInsecureRedirectUriPolicy>>,
     /// Optional request registry; absent by default (`request_uri_not_supported`).
     pub request_uri_resolver: Option<std::sync::Arc<dyn OAuthRequestUriResolver>>,
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
@@ -237,6 +245,9 @@ pub struct OAuthProviderConfig {
     pub scope_expirations: std::collections::HashMap<String, crate::jwt::JwtExpiration>,
     /// Maximum assertion future expiration and issued-at age, in seconds (default 300).
     pub assertion_max_lifetime: f64,
+    /// Seconds of `private_key_jwt` clock skew accepted on `nbf`, `exp` and
+    /// `iat`, also added to how long the `jti` is remembered (default 0, max 60).
+    pub assertion_clock_tolerance: f64,
     pub refresh_token_reuse_interval: f64,
     pub allow_public_client_prelogin: bool,
     pub enforce_per_client_resources: bool,
@@ -252,6 +263,7 @@ pub struct OAuthProviderConfig {
     /// Without a hook, any authenticated session with headers may manage resources.
     pub resource_privileges: Option<std::sync::Arc<dyn OAuthResourcePrivileges>>,
     pub advertised_scopes: Option<Vec<String>>,
+    pub advertised_token_endpoint_auth_methods: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
     pub allow_dynamic_client_registration: bool,
@@ -303,6 +315,7 @@ impl Default for OAuthProviderConfig {
             client_id_generator: None,
             client_secret_generator: None,
             validate_redirect_uri: None,
+            allow_insecure_redirect_uri: None,
             request_uri_resolver: None,
             client_secret_hasher: None,
             client_secret_cipher: None,
@@ -326,6 +339,7 @@ impl Default for OAuthProviderConfig {
             refresh_token_expires_in: 2_592_000.0,
             scope_expirations: std::collections::HashMap::new(),
             assertion_max_lifetime: 300.0,
+            assertion_clock_tolerance: 0.0,
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,
             enforce_per_client_resources: true,
@@ -338,6 +352,8 @@ impl Default for OAuthProviderConfig {
                 .map(str::to_owned)
                 .into(),
             advertised_scopes: None,
+            advertised_token_endpoint_auth_methods: None,
+            require_openid: false,
             advertised_claims: None,
             grant_types: ["authorization_code", "client_credentials", "refresh_token"]
                 .map(str::to_owned)
@@ -405,11 +421,7 @@ impl OAuthProviderPlugin {
                     .ok_or_else(|| AuthError::config("jwt_config"))?,
             )
         };
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path
-        );
+        let base = endpoint_url(ctx, "");
         let issuer = jwt
             .as_ref()
             .and_then(|jwt| jwt.issuer.as_deref())
@@ -433,7 +445,7 @@ impl OAuthProviderPlugin {
             "introspection_endpoint":format!("{base}/oauth2/introspect"),"revocation_endpoint":format!("{base}/oauth2/revoke"),
             "response_types_supported":if grants.iter().any(|grant|grant=="authorization_code"){vec!["code"]}else{vec![]},
             "response_modes_supported":["query"],"grant_types_supported":grants,
-            "token_endpoint_auth_methods_supported":token_auth,"token_endpoint_auth_signing_alg_values_supported":signing,
+            "token_endpoint_auth_methods_supported":self.config.advertised_token_endpoint_auth_methods.as_ref().unwrap_or(&token_auth),"token_endpoint_auth_signing_alg_values_supported":signing,
             "introspection_endpoint_auth_methods_supported":endpoint_auth,
             "introspection_endpoint_auth_signing_alg_values_supported":signing,
             "revocation_endpoint_auth_methods_supported":endpoint_auth,
@@ -533,19 +545,21 @@ fn unique(values: Vec<String>) -> Vec<String> {
     }
     result
 }
+pub(super) fn endpoint_url<S: AuthSchema>(ctx: &AuthContext<S>, path: &str) -> String {
+    format!(
+        "{}{}{path}",
+        ctx.config.base_url.trim_end_matches('/'),
+        ctx.config.base_path.trim_end_matches('/')
+    )
+}
 fn normalize_issuer(value: &str) -> String {
     let Ok(mut url) = url::Url::parse(value) else {
         return value.into();
     };
-    let loopback = url.host_str().is_some_and(|host| {
-        host == "localhost" || host == "127.0.0.1" || host == "[::1]" || host == "::1"
-    });
-    if url.scheme() != "https" && !loopback {
-        _ = url.set_scheme("https");
-    }
     url.set_query(None);
     url.set_fragment(None);
-    url.to_string().trim_end_matches('/').to_owned()
+    let url = url.to_string();
+    url.strip_suffix('/').unwrap_or(&url).to_owned()
 }
 /// Protocol error envelope carrying the failure status, optional body and headers.
 pub(super) fn endpoint_error_response(error: EndpointError) -> EndpointResponse {
@@ -599,7 +613,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         else {
             return Ok(response);
         };
-        resumed.merge_headers(response.headers);
+        interaction::retain_login_headers(&mut resumed, response.headers);
         resumed.to_response()
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
@@ -1338,6 +1352,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         self.validate_extensions()?;
+        if self.config.require_openid && !self.config.scopes.iter().any(|scope| scope == "openid") {
+            return Err(AuthError::config("requireOpenId requires openid in scopes"));
+        }
         for scope in self
             .config
             .client_registration_allowed_scopes

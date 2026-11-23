@@ -75,10 +75,18 @@ compatScenario(
     const machine = (await machineResponse.json()) as any;
     expect(machine.refresh_token).toBeUndefined();
     expect((await row(seed.refresh_token)).revoked).toBeNull();
+    // Better Auth #12812 requires a session when narrowing an offline refresh to a session grant.
+    const noSession = await issue({ scopes: ["email"] }, seed.refresh_token);
+    expect(noSession.status).toBe(400);
+    expect(await noSession.json()).toEqual({
+      error: "invalid_grant",
+      error_description: "invalid refresh token",
+    });
+    expect((await row(seed.refresh_token)).revoked).toBeNull();
     // The actual saved row is supplied, with a non-authoritative token field.
     // Reference rotation keys the atomic claim by row ID, not by that field.
     const response = await issue(
-      { scopes: ["email"], referenceId: "next-ref" },
+      { scopes: ["email"], referenceId: "next-ref", sessionId: session.session.id },
       seed.refresh_token,
       true,
       "snapshot-not-a-lookup-key",
@@ -93,13 +101,16 @@ compatScenario(
     expect(retained.scopes).toEqual(["email"]);
     expect(retained.resources).toEqual([userinfo]);
     expect(retained.requestedUserInfoClaims).toEqual(["email"]);
-    expect(retained.sessionId).toBeNull();
+    expect(retained.sessionId).toBe(original.sessionId);
     expect(retained.authTime).toBeNull();
     expect(retained.referenceId).toBe("next-ref");
     const old = await row(seed.refresh_token);
     expect(typeof old.revoked).toBe("string");
     expect(old.rotatedAt).toBe(old.revoked);
-    const replay = await issue({ scopes: ["email"] }, seed.refresh_token);
+    const replay = await issue(
+      { scopes: ["email"], sessionId: session.session.id },
+      seed.refresh_token,
+    );
     expect(replay.status).toBe(400);
     expect(await replay.json()).toEqual({
       error: "invalid_grant",

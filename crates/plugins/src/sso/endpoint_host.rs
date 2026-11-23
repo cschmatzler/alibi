@@ -17,16 +17,21 @@ pub(crate) fn public(host: &str) -> bool {
                 || ip.is_multicast()
                 || ip.is_unique_local()
                 || ip.is_unicast_link_local()
-                || s[0] & 0xffc0 == 0xfec0
+            {
+                return false;
+            }
+            // The well-known NAT64 prefix 64:ff9b::/96 only represents global
+            // IPv4 (RFC 6052), so it takes the class of its embedded address.
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return public_ipv4(Ipv4Addr::from((u32::from(s[6]) << 16) | u32::from(s[7])));
+            }
+            // Only global unicast 2000::/3 is publicly allocated; the rest of
+            // the space is IETF-reserved.
+            if s[0] & 0xe000 != 0x2000
                 || s[..2] == [0x2001, 0xdb8]
-                || s[..3] == [0x2001, 2, 0]
-                || s[..6] == [0x64, 0xff9b, 0, 0, 0, 0]
-                || s[..3] == [0x64, 0xff9b, 1]
-                || s[..2] == [0x2001, 0]
-                || s[..4] == [0x100, 0, 0, 0]
                 || s[0] == 0x3fff && s[1] & 0xf000 == 0
-                || s[0] == 0x5f00
-                || s[..6] == [0; 6]
+                || s[..3] == [0x2001, 2, 0]
+                || s[..2] == [0x2001, 0]
             {
                 return false;
             }
@@ -75,3 +80,58 @@ fn public_ipv4(ip: Ipv4Addr) -> bool {
         value & mask == u32::from(Ipv4Addr::from(*prefix)) & mask
     })
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::public;
+
+    #[test]
+    fn ipv6_is_public_only_inside_global_unicast() {
+        for host in [
+            "2000::1",
+            "3ffe::1",
+            "3fff:1000::1",
+            "[2a00:1450:4001:828::200e]",
+            "2002:808:808::1",
+        ] {
+            assert!(public(host), "{host}");
+        }
+        for host in [
+            "100:0:0:1::1",
+            "200::1",
+            "4000::1",
+            "8000::1",
+            "f000::1",
+            "fe00::1",
+            "fec0::1",
+            "5f00::1",
+            "0:1::1",
+            "1::1",
+            "::200:5efe:7f00:1",
+            // IPv4-translated (RFC 2765), distinct from IPv4-mapped.
+            "::ffff:0:7f00:1",
+            // A dotted tail after a non-mapped prefix is not IPv4-mapped.
+            "::ffff:808:127.0.0.1",
+            "64:ff9b:1::1",
+            "2001:db8::1",
+            "3fff::1",
+            "2001:2::1",
+            "2001::1",
+            "2002:7f00:1::1",
+            "::ffff:127.0.0.1",
+        ] {
+            assert!(!public(host), "{host}");
+        }
+    }
+
+    #[test]
+    fn nat64_takes_the_class_of_its_embedded_ipv4() {
+        assert!(public("64:ff9b::808:808"));
+        assert!(public("64:ff9b::5db8:d822"));
+        assert!(!public("64:ff9b::7f00:1"));
+        assert!(!public("64:ff9b::a9fe:a9fe"));
+        assert!(!public("64:ff9b::"));
+    }
+}
+// LCOV_EXCL_STOP

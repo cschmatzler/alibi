@@ -990,6 +990,24 @@ mod extension_tests {
             assert_eq!(value["total"], 1);
             assert_eq!(value["members"].as_array().unwrap().len(), 1);
         }
+        // 525bd7a7d preserves the filtered total when a page contains no rows.
+        for (query, total) in [
+            (vec![("filterField", "role"), ("filterValue", "admin")], 0),
+            (vec![("offset", "1")], 1),
+        ] {
+            let empty = call(
+                &plugin,
+                &ctx,
+                Some(&session.token),
+                HttpMethod::Get,
+                "/organization/list-members",
+                None,
+                &query,
+            )
+            .await?;
+            assert_eq!(empty.status, 200, "{}", String::from_utf8_lossy(&empty.body));
+            assert_eq!(body::<Value>(&empty)?, json!({"members":[],"total":total}));
+        }
         Ok(())
     }
 
@@ -2585,22 +2603,6 @@ mod extension_tests {
                 .status,
             alibi_core::InvitationStatus::Rejected
         );
-        let processed = call(
-            &explicit_false,
-            &ctx,
-            Some(&recipient_session.token),
-            HttpMethod::Get,
-            "/organization/get-invitation",
-            None,
-            &[("id", &invitation.id)],
-        )
-        .await?;
-        assert_eq!(processed.status, 400);
-        assert_eq!(
-            body::<Value>(&processed)?,
-            json!({"message":"Invitation not found!"})
-        );
-
         let expired = ctx
             .database
             .create_invitation(alibi_core::CreateInvitation {
@@ -2612,21 +2614,24 @@ mod extension_tests {
                 team_id: None,
             })
             .await?;
-        let expired_get = call(
-            &plugin,
-            &ctx,
-            Some(&recipient_session.token),
-            HttpMethod::Get,
-            "/organization/get-invitation",
-            None,
-            &[("id", &expired.id)],
-        )
-        .await?;
-        assert_eq!(expired_get.status, 400);
-        assert_eq!(
-            body::<Value>(&expired_get)?,
-            json!({"message":"Invitation not found!"})
-        );
+        // 89e74b81e gives missing, processed and expired invitations the same error.
+        for id in [invitation.id.as_str(), expired.id.as_str(), "missing-invitation"] {
+            let unavailable = call(
+                &explicit_false,
+                &ctx,
+                Some(&recipient_session.token),
+                HttpMethod::Get,
+                "/organization/get-invitation",
+                None,
+                &[("id", id)],
+            )
+            .await?;
+            assert_eq!(unavailable.status, 400);
+            assert_eq!(
+                body::<Value>(&unavailable)?,
+                json!({"code":"INVITATION_NOT_FOUND","message":"Invitation not found"})
+            );
+        }
         assert_error(
             &call(
                 &plugin,

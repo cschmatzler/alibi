@@ -139,32 +139,16 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         db: &C,
         user_id: &str,
     ) -> AuthResult<alibi_core::store::ScimIdentityState> {
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
         let users = user::Entity::find()
             .filter(user::Column::UserId.eq(user_id))
-            .limit(limit)
             .all(db)
             .await
             .map_err(map_db_err)?;
-        let connections = users
-            .iter()
-            .map(|user| user.connection_id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let retired = if connections.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            binding::Entity::find()
-                .filter(binding::Column::ConnectionId.is_in(connections))
-                .limit(limit)
-                .all(db)
-                .await
-                .map_err(map_db_err)?
-                .into_iter()
-                .filter(|binding| binding.decommission_status != "active")
-                .map(|binding| binding.connection_id)
-                .collect()
-        };
+        let retired = super::scim_projection::retired_scim_connections(
+            db,
+            users.iter().map(|user| user.connection_id.clone()),
+        )
+        .await?;
         let participating = users
             .iter()
             .filter(|user| !retired.contains(&user.connection_id))

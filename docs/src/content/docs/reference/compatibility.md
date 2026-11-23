@@ -5,9 +5,9 @@ description: "Which Better Auth version this implementation tracks, how parity i
 
 ## The contract
 
-HTTP behavior targets **better-auth@1.7.18**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against an Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
+HTTP behavior targets **better-auth@1.7.27**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against an Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
 
-Newer upstream documentation may describe behavior added after 1.7.18; it is outside the target until the pin moves.
+Newer upstream documentation may describe behavior added after 1.7.27; it is outside the target until the pin moves.
 
 Rust releases use independent Semantic Versioning and record the exact upstream target separately, so fixes can ship independently while retaining the upstream contract. See the [release policy](/guides/releases/) for versioning and compatibility rules.
 
@@ -68,6 +68,16 @@ Alibi both consumes OAuth/OIDC providers (including enterprise IdPs through [Gen
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged through 1.7.12, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 - **Change-password session replacement.** With `revokeOtherSessions`, revocation and the password write commit in one transaction as upstream's do, but the replacement session is created after that commit rather than inside it.
+
+## Upgrading from 1.7.18
+
+1.7.27 accepts bodyless `POST` requests that arrive as an empty stream without `Content-Type`, and `/get-session` ignores its body. Anonymous sign-in now enforces `trustedOrigins` like the other sign-in routes. Email sign-up sends its verification message after the user is committed: a delivery failure is logged and the sign-up still succeeds, so reject sign-ups with a `user.create.before` hook instead. Revoking your current session, revoking all sessions, and deleting a user by token now expire the session cookies. Expired verification rows are swept at most once a minute, and a lookup that finds its own expired value deletes it. On PostgreSQL `text` columns, new user JSON arrays are stored as standard JSON rather than array literals.
+
+Several error codes changed: `/device/token` answers a rejected client with `invalid_client`, `getInvitation` answers missing, expired or non-pending invitations with `INVITATION_NOT_FOUND`, and SIWE returns a generic 401 without internal error details. The first unpinned JWT signature after upgrading can create a key for `jwks.keyPairConfig.alg`, which changes `alg` and `kid` for later ID tokens and session JWTs; earlier tokens still verify by `kid`. When a wildcard `allowedHosts` entry covers the passkey `rpID`, passkeys are accepted only from exact `allowedHosts` entries, the fallback origin, or exact `trustedOrigins` entries. Custom SIWE stores must insert the wallet inside the sign-up transaction, and custom SCIM stores need native transactions; without them SCIM routes answer 501. Deleting an organization now happens before the active selection is cleared, which matters if a restrictive foreign key points at the active organization.
+
+Social providers accept account fields that are stored on create, link and sign-in. Kakao uses PKCE and accepts native-app ID tokens. Authorization URLs keep the provider's published query text. Generic OAuth sends `discoveryHeaders` only to the discovery origin and sends `authorizationHeaders` on refresh. A refresh refused with HTTP 200 now fails instead of returning the expired token. SAML Single Logout works for sessions past their first expiry; sessions whose logout record is gone fall back to the NameID on the SAML account without a SessionIndex. The SCIM managed-connection events list accepts `limit`, `offset` and `sortDirection` and returns `total`.
+
+For the OAuth provider, refresh tokens without `offline_access` stop working when their session ends, and a token request that fails validation no longer spends its authorization or device code. Client secrets must carry the configured prefix. Client metadata is written as a JSON object; rows stored as strings are still read. Client ID Metadata Document refreshes clear keys and post-logout redirect URIs the document no longer lists. Discovery reports an `http` issuer as configured; `http` redirect URIs outside the defaults need `allowInsecureRedirectUri`. No database migration is needed; the schema is unchanged.
 
 ## Upgrading from 1.7.12
 
